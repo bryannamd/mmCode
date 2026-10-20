@@ -37,8 +37,8 @@ description: 작업을 시작할 때 부르는 입구. 요청을 읽고 경로 1
 | | 화면 일치 | 두 구현의 픽셀 일치 · 스타일 체계 이전 | `playbooks/visual-parity.md` |
 | 측정·개선 | 성능 문제 | 느린 곳을 한 번 고침. 기준선 먼저 | `playbooks/perf-issue.md` |
 | | 지표 개선 반복 | 지표 하나를 목표까지 가설·측정 반복 | `playbooks/hillclimb.md` |
-| 길게 가기 | 긴 작업 | 단위 여러 개 · 세션 여러 개 | relay `init` → `unit` |
-| | 재개 | 인계 문서로 새 세션 시작 | relay `resume` |
+| 길게 가기 | 긴 작업 | 단위 여러 개 · 세션 여러 개 | relay `init` → `unit`. 완료 조건이 명령이면 relay `auto` |
+| | 재개 | 인계 문서로 새 세션 시작 | relay `resume`. `모드: auto`면 relay 전이표대로 |
 | | 페어 | 다른 코딩 에이전트(codex·agy)가 코딩하고 이 세션은 계획·브리프·검증을 맡는다. 상대는 pair가 환경으로 고른다 | pair |
 | 검증·검토 | 코드 리뷰 | 정확성 · 과설계 · 보안 | `/code-review` · `/security-review` · 과설계는 ponytail 플러그인이 있으면 `/ponytail-review` |
 | | 교차 검증 | 되돌리기 어려운 변경. 데이터 구조·공개 인터페이스·인증·금액·삭제 | 전역 규칙의 codex·agy 정책 |

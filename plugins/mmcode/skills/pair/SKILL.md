@@ -38,6 +38,8 @@ test "${HERDR_ENV:-}" = 1 && printf '%s\n' "$HERDR_WORKSPACE_ID" "$HERDR_TAB_ID"
 
 ### 2.1 codex pane 확보
 
+예외: 호출자(relay `auto`)가 작업 디렉터리와 agent 이름을 지정하면 아래 탐지와 재사용을 하지 않는다. 기존 pane을 쓰지 않고 `--cwd`를 그 경로로 한 새 pane을 띄워 그 이름으로 `agent start` 하며, 2.2 이름 붙이기는 건너뛰고 2.3은 그 이름을 타깃으로 쓴다. 끝나면 호출자가 그 pane을 닫는다.
+
 현재 탭의 에이전트부터 본다.
 
 ```bash
@@ -97,6 +99,13 @@ agy -p "$(cat <brief-file>)" --mode accept-edits --print-timeout 600s < /dev/nul
 - 이 모드에서 agy는 파일 읽기·편집만 할 수 있다. 셸 명령은 자동 거부되고, 시도하면 그 턴 전체가 출력도 편집도 없이 끝난다. 그래서 브리프마다 아래 고정 규칙을 넣는다.
 - `--dangerously-skip-permissions`를 붙이지 않고 agy 설정을 바꾸지 않는다. 둘 다 사용자 승인이 먼저다.
 - 큰 작업은 브리프 여러 개로 나누고, 하나를 검증한 뒤 다음을 보낸다. 같은 맥락에서 교정을 보낼 때는 `-c`(최근 대화 이어가기)를 붙인다.
+- 호출자가 작업 디렉터리(relay `auto`의 워크트리)를 지정하면 프로젝트 루트 대신 그곳에서 실행하고 `--add-dir`로 같은 경로를 작업 공간에 더한다.
+
+```bash
+cd <워크트리> && agy -p "$(cat <brief-file>)" --mode accept-edits --print-timeout 600s --add-dir <워크트리> < /dev/null
+```
+
+- 이때 호출자는 agy 프로세스의 PID와 시작 시각(`ps -o lstart= -p <PID>`)을 기록한다. 재개 때 같은 프로세스가 아직 살아 있는지 확인하는 데 쓴다.
 
 브리프 틀:
 
