@@ -1,0 +1,4 @@
+interface:
+  display_name: "check-impact · 영향 범위"
+  short_description: "작은 변경이 diff 밖 어디를 깨뜨릴 수 있는지 실행으로 증명합니다"
+  default_prompt: "Use $mmcode:check-impact to find what this change could break beyond the diff and prove it by running code."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "mmCode 설치 확인"
+  short_description: "플러그인 스킬이 로드됐는지 표식 한 줄로 확인합니다"
+  default_prompt: "Use $mmcode:probe to confirm the mmCode plugin is loaded."

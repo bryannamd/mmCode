@@ -1,0 +1,20 @@
+{
+  "name": "mmcode",
+  "interface": {
+    "displayName": "mmCode"
+  },
+  "plugins": [
+    {
+      "name": "mmcode",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mmcode"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

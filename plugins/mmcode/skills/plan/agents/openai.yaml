@@ -1,0 +1,4 @@
+interface:
+  display_name: "plan · 계획자와 일꾼"
+  short_description: "explain 뒤 계획자·일꾼으로 나눠 엄격한 시험과 교차 검토로 진행합니다"
+  default_prompt: "Use $mmcode:plan: show the explain screen, then split work between a planner and workers with strict tests and independent review."

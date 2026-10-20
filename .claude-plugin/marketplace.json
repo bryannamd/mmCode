@@ -1,0 +1,17 @@
+{
+  "name": "mmcode",
+  "owner": { "name": "bryannamd", "url": "https://github.com/bryannamd" },
+  "metadata": {
+    "description": "밀리미터 단위로 일하는 코딩 에이전트 절차. Claude Code·Codex 공용 스킬 묶음.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "mmcode",
+      "source": "./plugins/mmcode",
+      "description": "밀리미터 단위로 일하는 코딩 에이전트 절차. go · explain · plan · pair · relay · check-impact · check-benchmark · make-verifier. 설치 확인용 probe 포함.",
+      "category": "workflow",
+      "tags": ["claude-code", "codex", "skills", "workflow", "orchestration", "korean"]
+    }
+  ]
+}

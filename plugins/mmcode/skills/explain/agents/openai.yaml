@@ -1,0 +1,4 @@
+interface:
+  display_name: "explain · 먼저 설명"
+  short_description: "코드를 고치기 전에 작업 이해와 범위를 짧게 보여줍니다"
+  default_prompt: "Use $mmcode:explain to show the task-understanding screen before changing code."

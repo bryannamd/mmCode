@@ -1,0 +1,4 @@
+interface:
+  display_name: "pair · 짝 코딩"
+  short_description: "다른 코딩 에이전트(codex·agy)에 코딩을 맡기고 계획·검증을 맡습니다"
+  default_prompt: "Use $mmcode:pair to delegate coding to codex or agy while this session plans and verifies."

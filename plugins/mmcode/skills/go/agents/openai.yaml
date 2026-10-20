@@ -1,0 +1,4 @@
+interface:
+  display_name: "go · 작업 입구"
+  short_description: "요청을 읽고 맞는 절차로 보냅니다"
+  default_prompt: "Use $mmcode:go to pick the route for this task and follow its procedure."

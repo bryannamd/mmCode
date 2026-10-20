@@ -1,0 +1,13 @@
+{
+  "name": "mmcode",
+  "version": "0.2.0",
+  "description": "밀리미터 단위로 일하는 코딩 에이전트 절차. Claude Code·Codex 공용 스킬 8개(go · explain · plan · pair · relay · check-impact · check-benchmark · make-verifier)와 설치 확인용 probe.",
+  "author": {
+    "name": "bryannamd",
+    "url": "https://github.com/bryannamd"
+  },
+  "homepage": "https://github.com/bryannamd/mmCode",
+  "repository": "https://github.com/bryannamd/mmCode",
+  "license": "MIT",
+  "keywords": ["claude-code", "codex", "skills", "workflow", "orchestration", "korean"]
+}
