@@ -16,5 +16,8 @@
 ## 미검증·남은 한계
 -
 
+## 재위임 (있었으면)
+- 재위임: <n>회 · 원인 brief|capability|env|unknown
+
 ## 이월
 -
