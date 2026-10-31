@@ -30,7 +30,7 @@ CLAUDE.md 의 Advisor/Worker·세션 핸드오프·Git 안전·다중 세션 규
 
 ## resume — 새 세션 첫 응답
 
-1. 인계 문서 **재개 블록·상태표·이월만** 읽는다. 이전 로그·증거 REPORT 재독 금지(필요한 설계·소스만 좁게).
+1. 인계 문서 **재개 블록·상태표·이월·확인된 실패만** 읽는다. 이전 로그·증거 REPORT 재독 금지(필요한 설계·소스만 좁게).
 2. 첫 응답에 상태표를 표로 낸다: `bash "$S/scripts/status.sh" <HANDOFF.md>` 출력(현재 단위·완료/남은 단위·진행률·최근 단위 소요·남은 시간 범위).
 3. 프롬프트에 이전 pane_id 가 있으면 `herdr agent list` 로 그 pane 이 `idle` 인지 확인 후 `herdr pane close <id>`. `working` 이면 닫지 않고 단위 끝에 재확인. 한 번에 하나만.
 4. 첫 작업 착수. 세션 연번은 인계 문서 줄을 읽고 +1 해 갱신.
@@ -39,12 +39,12 @@ CLAUDE.md 의 Advisor/Worker·세션 핸드오프·Git 안전·다중 세션 규
 
 ## unit — 단위 표준 절차
 
-1. **브리프**: `templates/BRIEF.md` 복제 → `docs/relay/<plan>/<unit>/BRIEF.md`. 내용은 plan 3절, 분량은 R12.
+1. **브리프**: `templates/BRIEF.md` 복제 → `docs/relay/<plan>/<unit>/BRIEF.md`. 내용은 plan 3절, 분량은 R12. 인계 문서 "확인된 실패" 중 이 단위에 닿는 줄은 브리프에 옮긴다.
 2. **Worker** 위임(모델 등급은 plan 3절 표를 따른다). Worker 가 테스트를 실행하고 로그를 단위 디렉터리에 저장. 병렬은 서로 다른 파일의 순수 모듈만.
 3. **Advisor 확인**: `git diff HEAD -- <path>` + 로그 읽기. 재실행하지 않는다. 결함이면 재위임(횟수·원인 가르기는 plan 3절).
 4. **독립 검수**: 새 컨텍스트(`/code-review` 또는 검수 에이전트)에 diff + 신규 테스트만. 뺄 것 1개 이상을 함께 요구한다(plan 5절). 결과를 `INDEPENDENT_REVIEW.md`(형식은 템플릿). FAIL 이면 수정 → 델타 재검수(회차 상한과 남은 지적 처리는 plan 5절).
 5. **커밋**: 인계 문서 커밋 정책 줄을 읽는다. `확인 후` 면 "커밋할까요?" 후 진행. 다중 세션 흔적이 있으면 `scripts/commit-unit.sh` 2단계(prepare → stat 읽고 → finish). 저장소가 둘 이상이면 저장소별로.
-6. **인계 갱신**: 상태표 그 행만(상태·종료 시각·커밋 해시) + 이월 항목. 이월은 다음 단위를 막는 것만 적고 해소되면 지운다. 막지 않는 minor 는 `docs/relay/<plan>/DEBT.md`(`templates/DEBT.md`) 에 적는다. 서술은 단위 디렉터리 `REPORT.md` 로. 분량과 인계 문서 보관(`docs/relay/<plan>/archive/`) 기준은 R12.
+6. **인계 갱신**: 상태표 그 행만(상태·종료 시각·커밋 해시) + 이월 항목. 이월은 다음 단위를 막는 것만 적고 해소되면 지운다. 막지 않는 minor 는 `docs/relay/<plan>/DEBT.md`(`templates/DEBT.md`) 에 적는다. 반증된 접근은 "확인된 실패"에 적는다(기준은 R12. REPORT 는 다음 세션이 읽지 않기 때문). 단위가 `보류`·`blocked` 로 멈출 때도 적는다. 서술은 단위 디렉터리 `REPORT.md` 로. 분량과 인계 문서 보관(`docs/relay/<plan>/archive/`) 기준은 R12.
 7. **교체 판단**: R7(opus 단위 뒤 또는 이 세션에서 2단위를 마친 뒤에만 `rotate`).
 
 ## rotate — 세션 교체 (herdr 전용)
