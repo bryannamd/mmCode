@@ -1,6 +1,6 @@
 ---
 name: relay
-description: 큰 작업을 "단위 표"로 쪼개 브리프→Worker→독립 검수→커밋→인계 한 줄 갱신→새 세션 교체(herdr) 로 이어 달리는 실행 워크플로. auto 모드(완료 조건까지 무인 반복)를 지원한다. 계획 파일과 인계 문서(HANDOFF) 템플릿, 첫 응답 상태표 스크립트, herdr 세션 교체 스크립트, 임시 인덱스 원자 커밋 스크립트 포함. "/relay", "relay auto", "핸드오프 루프", "단위 계획으로 진행", "handoff loop", "세션 교체해", "인계 재개", "단위 끝 커밋하고 다음 세션" 요청에 사용. 일반적인 "계획 세워줘"·단일 작업에는 쓰지 않는다.
+description: 큰 작업을 "단위 표"로 쪼개 브리프→Worker→독립 검수→커밋→인계 한 줄 갱신→새 세션 교체(Herdr) 로 이어 달리는 실행 워크플로. auto 모드(완료 조건까지 무인 반복)를 지원한다. 계획 파일과 인계 문서(HANDOFF) 템플릿, 첫 응답 상태표 스크립트, Herdr(hc) 세션 교체 스크립트, 임시 인덱스 원자 커밋 스크립트 포함. "/relay", "relay auto", "핸드오프 루프", "단위 계획으로 진행", "handoff loop", "세션 교체해", "인계 재개", "단위 끝 커밋하고 다음 세션" 요청에 사용. 일반적인 "계획 세워줘"·단일 작업에는 쓰지 않는다.
 ---
 
 # relay — 단위 실행 + 세션 인계 반복
@@ -32,7 +32,7 @@ CLAUDE.md 의 Advisor/Worker·세션 핸드오프·Git 안전·다중 세션 규
 
 1. 인계 문서 **재개 블록·상태표·이월·확인된 실패만** 읽는다. 이전 로그·증거 REPORT 재독 금지(필요한 설계·소스만 좁게).
 2. 첫 응답에 상태표를 표로 낸다: `bash "$S/scripts/status.sh" <HANDOFF.md>` 출력(현재 단위·완료/남은 단위·진행률·최근 단위 소요·남은 시간 범위).
-3. 프롬프트에 이전 pane_id 가 있으면 `herdr agent list` 로 그 pane 이 `idle` 인지 확인 후 `herdr pane close <id>`. `working` 이면 닫지 않고 단위 끝에 재확인. 한 번에 하나만.
+3. 프롬프트에 이전 세션 터미널 주소가 있으면 `hc get <주소>` 로 그 터미널이 `idle`·`done` 인지 확인 후 `hc kill <주소>` 뒤 `hc rm <주소>`. `working` 이면 닫지 않고 단위 끝에 재확인. 한 번에 하나만.
 4. 첫 작업 착수. 세션 연번은 인계 문서 줄을 읽고 +1 해 갱신.
 
 재개 블록에 `모드: auto`가 있으면 `goal/state.json`도 읽고 3·4단계 대신 `## auto`의 전이표를 적용한다. 이때 4단계 연번은 `rotated_serial`이 있으면 읽기만 하고 없으면 +1 한다. 다른 모드는 위 그대로다.
@@ -47,14 +47,14 @@ CLAUDE.md 의 Advisor/Worker·세션 핸드오프·Git 안전·다중 세션 규
 6. **인계 갱신**: 상태표 그 행만(상태·종료 시각·커밋 해시) + 이월 항목. 이월은 다음 단위를 막는 것만 적고 해소되면 지운다. 막지 않는 minor 는 `docs/relay/<plan>/DEBT.md`(`templates/DEBT.md`) 에 적는다. 반증된 접근은 "확인된 실패"에 적는다(기준은 R12. REPORT 는 다음 세션이 읽지 않기 때문). 단위가 `보류`·`blocked` 로 멈출 때도 적는다. 작업 중 사용자가 더한 요청은 받은 턴에 적는다: 새 일은 상태표에 단위 행으로, 지금 단위의 조건은 이월에 적는다(대화에만 둔 요청은 세션 교체 때 사라진다). 서술은 단위 디렉터리 `REPORT.md` 로. 분량과 인계 문서 보관(`docs/relay/<plan>/archive/`) 기준은 R12.
 7. **교체 판단**: R7(opus 단위 뒤 또는 이 세션에서 2단위를 마친 뒤에만 `rotate`).
 
-## rotate — 세션 교체 (herdr 전용)
+## rotate — 세션 교체 (Herdr 전용)
 
 ```bash
 bash "$S/scripts/rotate.sh" <prefix> <HANDOFF.md> [PLAN.md]
 ```
 Codex 세션에서 실행하면 `ROTATE_KIND=codex` 를 붙여 다음 세션도 codex 로 띄운다(기본 claude).
-HERDR_ENV=1 필요. 스크립트가 인계 문서 스냅샷(`archive/HANDOFF.#N.md`, docs 가 gitignore 라 이력이 없기 때문) → pane split → `agent start <prefix>-N` → rename `<prefix> (#N)` → 재개 프롬프트(인계 경로·이전 pane_id 포함) 전송 → 전송 성공 후 세션 연번 갱신까지 한다. 현재 세션은 "교체 완료, 이 세션 종료" 한 줄만 남기고 멈춘다(자기 pane 은 닫지 않는다 — 마지막 보고가 사라짐).
-herdr 밖이면 스크립트가 거부한다 → 인계 문서만 갱신하고 사용자에게 새 세션 시작을 안내한다. 다른 오케스트레이터는 쓰지 않는다.
+HC_TERMINAL_ID 필요. 스크립트가 인계 문서 스냅샷(`archive/HANDOFF.#N.md`, docs 가 gitignore 라 이력이 없기 때문) → `hc run --bg --no-parent --name <prefix>-N`(내 탭 라벨을 붙여 같은 탭에 보이게) → `hc wait` 로 준비 확인 → 표시 라벨 `relay=<prefix> (#N)` → 재개 프롬프트(인계 경로·이전 터미널 주소 포함) 를 `hc send --wait` 로 전송 → 전송 성공 후 세션 연번 갱신까지 한다. 현재 세션은 "교체 완료, 이 세션 종료" 한 줄만 남기고 멈춘다(자기 터미널은 닫지 않는다 — 마지막 보고가 사라짐).
+Herdr 밖이면 스크립트가 거부한다 → 인계 문서만 갱신하고 사용자에게 새 세션 시작을 안내한다. 다른 오케스트레이터는 쓰지 않는다.
 
 ## auto — 완료 조건까지 무인 반복
 
@@ -82,14 +82,14 @@ init(auto) → 반복 엔진 등록(1회) → [반복] → 완료 보고(close �
 8. **통합 검수**: 조건 평가가 완료 판정일 때 단위 간 정합·중복·빠진 연결만 본다(`goal/INTEGRATION_REVIEW.md`). 지적 0이면 `/loop`를 `stop`하고 완료 보고로 간다. 지적이 있으면 7단계로 보정하고, 조건 재통과와 델타 재검수 지적 0이 되어야 완료다.
 9. **경계 점검(뒤)·중단**: 최대 시간·최대 반복·보정 상한·`blocked`를 본다. 조건 평가와 통합 검수를 통과해 남은 단위가 없으면 완료 보고가 먼저다. 멈추면 `eval-goal.sh stop <사유>`를 부르고 `/loop`를 `stop`한다. 사유 값과 기록 규칙은 R15 ③.
 10. **완료 보고**: plan 완료 화면을 쓰고 남은 일에 `close 대기`를 적는다(`stopped_reason`=`done`). 단위별 커밋은 자동 승인 범위 안에서 이미 끝나 있다. `close`는 사용자가 돌아와 항목마다 확인하며 한다. 남은 `relay/<plan>/*` 브랜치·워크트리·임시 허용이 있으면 종료 완료로 적지 않는다(`references/closing.md`).
-11. **교체 판단·교체**: 판단은 R7 그대로다. herdr 안에서는 같은 턴에서 `eval-goal.sh stop rotate`로 `stopped_reason`을 적고 `rotate.sh`를 실행한다. 종료 코드 0 = 성공(`/loop` stop, "교체 완료" 한 줄). 1 = 생성 전 실패(한 번 더 시도하고 또 실패하면 `rotate-failed`로 중단. 0·1·4 밖의 코드는 재시도 없이 같다). 4 = 새 세션은 떴으나 전송·대기 실패(rotate.sh가 `rotate-uncertain`을 기록하고 새 pane에 `esc`를 보낸다. 이 세션도 `/loop` stop). 연번은 rotate.sh가 전송 전에 +1 하고 `rotated_serial`을 남긴다. 새 세션 첫 턴에서 Claude는 전이표대로 등록만 하고 턴을 끝내고(단위 작업은 첫 깨우기에서 시작), Codex(`ROTATE_KIND=codex`)는 바로 반복 본문에 들어간다. herdr 밖에서는 인계 문서를 갱신하고 `stopped_reason`=`rotate`로 멈춘 뒤 새 세션 시작을 안내한다.
+11. **교체 판단·교체**: 판단은 R7 그대로다. Herdr 안에서는 같은 턴에서 `eval-goal.sh stop rotate`로 `stopped_reason`을 적고 `rotate.sh`를 실행한다. 종료 코드 0 = 성공(`/loop` stop, "교체 완료" 한 줄). 1 = 생성 전 실패(한 번 더 시도하고 또 실패하면 `rotate-failed`로 중단. 0·1·4 밖의 코드는 재시도 없이 같다). 4 = 새 세션은 떴으나 전송·대기 실패(rotate.sh가 `rotate-uncertain`을 기록하고 새 터미널에 `hc keys <주소> esc`를 보낸다. 이 세션도 `/loop` stop). 연번은 rotate.sh가 전송 전에 +1 하고 `rotated_serial`을 남긴다. 새 세션 첫 턴에서 Claude는 전이표대로 등록만 하고 턴을 끝내고(단위 작업은 첫 깨우기에서 시작), Codex(`ROTATE_KIND=codex`)는 바로 반복 본문에 들어간다. Herdr 밖에서는 인계 문서를 갱신하고 `stopped_reason`=`rotate`로 멈춘 뒤 새 세션 시작을 안내한다.
 12. **resume 전이표**: 새 세션·중단 뒤·비정상 종료 뒤 공통이다. 사람이 resume를 부른 것이 곧 재개 승인이다. 연번은 실제로 등록·진입하는 행(1·2·4행)에서만 갱신한다. `rotated_serial`이 있으면 읽기만 하고 표시를 지우며, 없으면 +1 한다. 안내만 하는 3·5행은 연번과 표시를 건드리지 않는다.
 
 | 행 | `stopped_reason` | 재개 블록 `중단:` 줄 또는 상태표 `blocked` 행 | resume가 하는 일 |
 |---|---|---|---|
 | 1 | `rotate` | 없음 | 비우고 등록(Claude)·진입(Codex) |
-| 2 | `""`(비정상 종료: 세션 사망·429·`/loop` 만료·Codex 턴 종료. 사용자가 3행을 거쳐 정리했으면 `stopped_reason`이 `""`여도 4행으로 간다: 3행이 `resume_after_cleanup: true`를 state.json에 남긴다) | 없음 | `units[*].worker`를 본다. herdr agent가 `working`이면 R14의 Worker 중단 절차(`esc` 뒤 `idle` 확인), agy는 기록한 PID·시작 시각이 일치하는 프로세스가 살아 있으면 끝날 때까지 기다린다(최대 `Worker 제한`). 멈추지 않으면 등록하지 않고 그 단위를 `blocked`, `stopped_reason`을 `worker-alive`로 적고 `중단:` 줄을 쓴다(사람이 Worker를 끝낸다). 멈췄으면 그 Worker pane을 닫고(auto 4단계가 새로 띄운다) 상태표와 `git status --short`를 보이고 등록·진입 |
-| 3 | 값과 무관 | 하나라도 있음 | 등록하지 않는다. 사유·상태표·단위별 `stage`와 워크트리(더티 여부)·살아 있는 세션(`herdr agent list`)을 보이고 state.json에 `resume_after_cleanup: true`를 적는다. 사용자가 재개 블록(`커밋 정책:` 만료 조건·경계)을 고치고, 되돌릴 `blocked` 행을 `미착수`로 바꾸고(그 단위의 더티 워크트리는 보존·폐기 중 택해 정리), `중단:` 줄을 지우면 다음 resume이 4행이다 |
+| 2 | `""`(비정상 종료: 세션 사망·429·`/loop` 만료·Codex 턴 종료. 사용자가 3행을 거쳐 정리했으면 `stopped_reason`이 `""`여도 4행으로 간다: 3행이 `resume_after_cleanup: true`를 state.json에 남긴다) | 없음 | `units[*].worker`를 본다. hc Worker 터미널이 `working`이면(`hc get <주소>`) R14의 Worker 중단 절차(`esc` 뒤 `idle` 확인), agy는 기록한 PID·시작 시각이 일치하는 프로세스가 살아 있으면 끝날 때까지 기다린다(최대 `Worker 제한`). 멈추지 않으면 등록하지 않고 그 단위를 `blocked`, `stopped_reason`을 `worker-alive`로 적고 `중단:` 줄을 쓴다(사람이 Worker를 끝낸다). 멈췄으면 그 Worker pane을 닫고(auto 4단계가 새로 띄운다) 상태표와 `git status --short`를 보이고 등록·진입 |
+| 3 | 값과 무관 | 하나라도 있음 | 등록하지 않는다. 사유·상태표·단위별 `stage`와 워크트리(더티 여부)·살아 있는 세션(`hc ls`)을 보이고 state.json에 `resume_after_cleanup: true`를 적는다. 사용자가 재개 블록(`커밋 정책:` 만료 조건·경계)을 고치고, 되돌릴 `blocked` 행을 `미착수`로 바꾸고(그 단위의 더티 워크트리는 보존·폐기 중 택해 정리), `중단:` 줄을 지우면 다음 resume이 4행이다 |
 | 4 | 값과 무관(3행을 거쳐 정리된 뒤) | 둘 다 없음(사용자가 정리함) | 같은 턴에서 이 순서로: ① 2행과 같은 Worker 생존 확인(멈추지 않으면 2행처럼 `worker-alive`로 되돌아간다) ② `미착수`로 되돌린 단위의 Worker pane 닫기, `.relay-logs/` 옮기기, 워크트리 제거(실패하면 여기서 멈추고 `blocked`·`중단:` 줄을 되살린다. 사용자가 직접 정리한다), 브랜치 이름 보존(`.discarded-<n>`), `units[<unit>]`과 `redelegations` 키 초기화 ③ `HEAD ≠ expected_tip`인 저장소가 있으면 외부 커밋을 받아들일지 사용자에게 확인하고, 받아들이면 `expected_tip`을 현재 HEAD로 갱신(거절하면 멈춘다) ④ 경계 블록 재검증 → state.json 상한값 갱신(`started_at`·`iterations` 유지), `stopped_reason` 비움 ⑤ status.sh ⑥ 등록·진입 |
 | 5 | `done` | 없음 | 등록하지 않는다. 완료 상태표만 보인다(close 대기) |
 
