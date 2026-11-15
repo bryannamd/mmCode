@@ -1,0 +1,10 @@
+{"ts":"2026-11-15T12:00:00+09:00","type":"unit.phase","plan":"p","unit":"U1","data":{"from":"queued","to":"build"}}
+이것은 JSON이 아니다
+{"ts":"2026-11-15T12:01:00+09:00","type":"unit.teleport","plan":"p","unit":"U1","data":{}}
+{"ts":"어제","type":"unit.phase","plan":"p","unit":"U1","data":{"to":"done"}}
+{"type":"unit.phase","plan":"p","unit":"U1","data":{"to":"done"}}
+{"ts":"2026-11-15T12:02:00+09:00","type":"unit.phase","plan":"p","unit":"U1","data":{"to":"nowhere"}}
+{"ts":"2026-11-15T12:03:00+09:00","type":"unit.phase","plan":"ghost","unit":"U1","data":{"to":"nowhere"}}
+
+{"ts":"2026-11-15T12:04:00+09:00","type":"unit.phase","plan":"p","unit":"U1","data":{"from":"build","to":"verify"}}
+{"ts":"2026-11-15T12:05:00+09:00","type":"unit.phase","plan":"p","unit":"U1","data":{"from":"verify","to":"re

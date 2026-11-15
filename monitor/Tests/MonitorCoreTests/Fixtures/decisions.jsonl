@@ -1,0 +1,13 @@
+{"ts":"2026-11-15T13:00:00+09:00","type":"decision.ask","plan":"p","actor":{"terminal":"t1","harness":"claude-code"},"data":{"id":"D1","question":"푸시할까요?","recommendation":"아니오","impact":"배포 지연","blocks":["U3"],"meanwhile":"U4 진행"}}
+{"ts":"2026-11-15T13:01:00+09:00","type":"decision.ask","plan":"p","data":{"question":"id 없는 질문"}}
+{"ts":"2026-11-15T13:02:00+09:00","type":"decision.answer","plan":"p","data":{"answer":"아니오"}}
+{"ts":"2026-11-15T13:03:00+09:00","type":"decision.answer","plan":"p","data":{"id":"D1","answer":"아니오, 로컬만"}}
+{"ts":"2026-11-15T13:04:00+09:00","type":"decision.answer","plan":"p","data":{"id":"없는것","answer":"x"}}
+{"ts":"2026-11-15T13:10:00+09:00","type":"directive.received","plan":"p","data":{"id":"R1","kind":"stop-after","text":"U2 끝나면 멈춰"}}
+{"ts":"2026-11-15T13:11:00+09:00","type":"directive.received","plan":"p","data":{"kind":"message","text":"id 없는 지시"}}
+{"ts":"2026-11-15T13:12:00+09:00","type":"directive.received","plan":"p","data":{"kind":"stop-after","text":"두 번째 정지"}}
+{"ts":"2026-11-15T13:13:00+09:00","type":"directive.applied","plan":"p","data":{"kind":"stop-after"}}
+{"ts":"2026-11-15T13:14:00+09:00","type":"directive.rejected","plan":"p","data":{"id":"R2","reason":"계획자가 거부"}}
+{"ts":"2026-11-15T13:15:00+09:00","type":"directive.applied","plan":"p","data":{"kind":"reorder"}}
+{"ts":"2026-11-15T13:20:00+09:00","type":"session.start","plan":"p","actor":{"terminal":"t7","harness":"codex","model":"gpt-x","effort":"high"},"data":{"seq":1}}
+{"ts":"2026-11-15T13:21:00+09:00","type":"session.stop","plan":"p","actor":{"terminal":"t7"},"data":{}}

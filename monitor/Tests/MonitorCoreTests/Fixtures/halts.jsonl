@@ -1,0 +1,9 @@
+{"ts":"2026-11-15T11:00:00+09:00","type":"unit.phase","plan":"p","unit":"U1","data":{"from":"queued","to":"build"}}
+{"ts":"2026-11-15T11:01:00+09:00","type":"unit.halt","plan":"p","unit":"U1","data":{"reason":"decision"}}
+{"ts":"2026-11-15T11:02:00+09:00","type":"unit.halt","plan":"p","data":{"reason":"limit:iterations"}}
+{"ts":"2026-11-15T11:03:00+09:00","type":"unit.halt","plan":"p","unit":"U2","data":{"reason":"blocked:U3"}}
+{"ts":"2026-11-15T11:03:30+09:00","type":"unit.halt","plan":"p","unit":"U1","data":{"reason":"rotate"}}
+{"ts":"2026-11-15T11:03:40+09:00","type":"unit.halt","plan":"p","unit":"U1","data":{"reason":"done"}}
+{"ts":"2026-11-15T11:04:00+09:00","type":"unit.halt","plan":"p","data":{"reason":"stop-after"}}
+{"ts":"2026-11-15T11:05:00+09:00","type":"unit.resume","plan":"p","unit":"U1","data":{"reason":"decision"}}
+{"ts":"2026-11-15T11:06:00+09:00","type":"unit.resume","plan":"p","data":{"reason":"stop-after"}}
