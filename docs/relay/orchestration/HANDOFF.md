@@ -15,8 +15,8 @@
 | 단위 | 내용 | 파일 | 선행 | 모델 | 병렬 | 검수 | pathspec | 가중치 | 상태 | 종료 시각 | 커밋 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | U1 | 환경: rotate.sh와 pair가 hc에서 동작 | relay/scripts/rotate.sh, pair | — | opus | ✘ | sonnet | mmCode:plugins | | 완료 | 2026-11-15 08:46 | mmCode 4f62d5c |
-| U2 | 얇은 한 바퀴: 이벤트 파일, 단계 전환 명령, 검사 결과 기록, 상태표 생성 | relay/scripts/phase.sh, tests/relay/phase.test.sh | U1 | sonnet | ✘ | sonnet | mmCode:plugins,tests | | 진행 | | |
-| U3 | 증거: 완료 기준 형식, 실패 먼저, 변형 점검, 위험 등급. 스킬 문서 낱말 정리 | plan, relay 문서와 템플릿 | U2 | sonnet | ✘ | sonnet | mmCode:plugins,tests | | 미착수 | | |
+| U2 | 얇은 한 바퀴: 이벤트 파일, 단계 전환 명령, 검사 결과 기록, 상태표 생성 | relay/scripts/phase.sh, tests/relay/phase.test.sh | U1 | sonnet | ✘ | sonnet | mmCode:plugins,tests | | 완료 | 2026-11-16 04:10 | mmCode ee8d005 |
+| U3 | 증거: 완료 기준 형식, 실패 먼저, 변형 점검, 위험 등급. 스킬 문서 낱말 정리 | plan, relay 문서와 템플릿 | U2 | sonnet | ✘ | sonnet | mmCode:plugins,tests | | 진행 | | |
 | U4 | 사람: 결정과 지시 이벤트, 단위 후 정지, 즉시 중단, 계속 | relay/scripts/phase.sh, 훅 | U3 | sonnet | ✘ | sonnet | mmCode:plugins,tests | | 미착수 | | |
 | U5 | 화면: 모니터 조회와 지시 보내기(별도 세션) | docs/plans/monitor-plan.md | U2 | | ✘ | | | | 미착수 | | |
 | U6 | 단위 자동이 같은 명령을 쓴다. 기록에서 재개. 계획 자동 | relay/scripts/eval-goal.sh, rules.md | U4 | opus | ✘ | opus | mmCode:plugins,tests | | 미착수 | | |
