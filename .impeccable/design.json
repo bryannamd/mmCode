@@ -1,0 +1,768 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-15T08:36:46Z",
+  "title": "Design System: mmCode 프로젝트 모니터",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "남색 잉크",
+        "canonical": "#232845",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 275)",
+          "oklch(26.4% 0.042 275)",
+          "oklch(37.9% 0.053 275)",
+          "oklch(49.3% 0.054 275)",
+          "oklch(60.7% 0.054 275)",
+          "oklch(72.1% 0.054 275)",
+          "oklch(83.6% 0.051 275)",
+          "oklch(95.0% 0.041 275)"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "남색 2단",
+        "canonical": "#39406b",
+        "tonalRamp": [
+          "oklch(15.0% 0.044 275)",
+          "oklch(26.4% 0.058 275)",
+          "oklch(37.9% 0.072 275)",
+          "oklch(49.3% 0.074 275)",
+          "oklch(60.7% 0.074 275)",
+          "oklch(72.1% 0.074 275)",
+          "oklch(83.6% 0.070 275)",
+          "oklch(95.0% 0.056 275)"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "남색 3단",
+        "canonical": "#4a548c",
+        "tonalRamp": [
+          "oklch(15.0% 0.055 275)",
+          "oklch(26.4% 0.072 275)",
+          "oklch(37.9% 0.090 275)",
+          "oklch(49.3% 0.092 275)",
+          "oklch(60.7% 0.092 275)",
+          "oklch(72.1% 0.092 275)",
+          "oklch(83.6% 0.088 275)",
+          "oklch(95.0% 0.070 275)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "종이",
+        "canonical": "#fffdf4",
+        "tonalRamp": [
+          "oklch(15.0% 0.007 96)",
+          "oklch(26.4% 0.009 96)",
+          "oklch(37.9% 0.012 96)",
+          "oklch(49.3% 0.012 96)",
+          "oklch(60.7% 0.012 96)",
+          "oklch(72.1% 0.012 96)",
+          "oklch(83.6% 0.011 96)",
+          "oklch(95.0% 0.009 96)"
+        ]
+      },
+      "pink": {
+        "role": "primary",
+        "displayName": "차례 분홍",
+        "canonical": "#ff4f9a",
+        "tonalRamp": [
+          "oklch(15.0% 0.132 359)",
+          "oklch(26.4% 0.174 359)",
+          "oklch(37.9% 0.215 359)",
+          "oklch(49.3% 0.220 359)",
+          "oklch(60.7% 0.220 359)",
+          "oklch(72.1% 0.220 359)",
+          "oklch(83.6% 0.210 359)",
+          "oklch(95.0% 0.168 359)"
+        ]
+      },
+      "green": {
+        "role": "secondary",
+        "displayName": "완료 초록",
+        "canonical": "#3fc46f",
+        "tonalRamp": [
+          "oklch(15.0% 0.101 151)",
+          "oklch(26.4% 0.132 151)",
+          "oklch(37.9% 0.164 151)",
+          "oklch(49.3% 0.168 151)",
+          "oklch(60.7% 0.168 151)",
+          "oklch(72.1% 0.168 151)",
+          "oklch(83.6% 0.160 151)",
+          "oklch(95.0% 0.128 151)"
+        ]
+      },
+      "amber": {
+        "role": "secondary",
+        "displayName": "진행 호박",
+        "canonical": "#ffc23d",
+        "tonalRamp": [
+          "oklch(15.0% 0.094 82)",
+          "oklch(26.4% 0.124 82)",
+          "oklch(37.9% 0.153 82)",
+          "oklch(49.3% 0.156 82)",
+          "oklch(60.7% 0.156 82)",
+          "oklch(72.1% 0.156 82)",
+          "oklch(83.6% 0.150 82)",
+          "oklch(95.0% 0.120 82)"
+        ]
+      },
+      "red": {
+        "role": "secondary",
+        "displayName": "정지 빨강",
+        "canonical": "#ef4b4b",
+        "tonalRamp": [
+          "oklch(15.0% 0.120 25)",
+          "oklch(26.4% 0.159 25)",
+          "oklch(37.9% 0.197 25)",
+          "oklch(49.3% 0.201 25)",
+          "oklch(60.7% 0.201 25)",
+          "oklch(72.1% 0.201 25)",
+          "oklch(83.6% 0.192 25)",
+          "oklch(95.0% 0.154 25)"
+        ]
+      },
+      "on-ink-sub": {
+        "role": "neutral",
+        "displayName": "남색 위 보조 글자",
+        "canonical": "#c9d3ee",
+        "tonalRamp": [
+          "oklch(15.0% 0.023 269)",
+          "oklch(26.4% 0.031 269)",
+          "oklch(37.9% 0.038 269)",
+          "oklch(49.3% 0.039 269)",
+          "oklch(60.7% 0.039 269)",
+          "oklch(72.1% 0.039 269)",
+          "oklch(83.6% 0.037 269)",
+          "oklch(95.0% 0.030 269)"
+        ]
+      },
+      "paper-sub": {
+        "role": "neutral",
+        "displayName": "종이 위 보조 글자",
+        "canonical": "#4d5677",
+        "tonalRamp": [
+          "oklch(15.0% 0.033 272)",
+          "oklch(26.4% 0.044 272)",
+          "oklch(37.9% 0.054 272)",
+          "oklch(49.3% 0.055 272)",
+          "oklch(60.7% 0.055 272)",
+          "oklch(72.1% 0.055 272)",
+          "oklch(83.6% 0.053 272)",
+          "oklch(95.0% 0.042 272)"
+        ]
+      },
+      "paper-line": {
+        "role": "neutral",
+        "displayName": "종이 위 구분선",
+        "canonical": "#d9d6c4",
+        "tonalRamp": [
+          "oklch(15.0% 0.015 99)",
+          "oklch(26.4% 0.019 99)",
+          "oklch(37.9% 0.024 99)",
+          "oklch(49.3% 0.024 99)",
+          "oklch(60.7% 0.024 99)",
+          "oklch(72.1% 0.024 99)",
+          "oklch(83.6% 0.023 99)",
+          "oklch(95.0% 0.019 99)"
+        ]
+      },
+      "box": {
+        "role": "secondary",
+        "displayName": "상자 호박",
+        "canonical": "#eab85f",
+        "tonalRamp": [
+          "oklch(15.0% 0.073 80)",
+          "oklch(26.4% 0.096 80)",
+          "oklch(37.9% 0.119 80)",
+          "oklch(49.3% 0.121 80)",
+          "oklch(60.7% 0.121 80)",
+          "oklch(72.1% 0.121 80)",
+          "oklch(83.6% 0.116 80)",
+          "oklch(95.0% 0.093 80)"
+        ]
+      },
+      "box-2": {
+        "role": "secondary",
+        "displayName": "상자 호박 아랫단",
+        "canonical": "#b9822f",
+        "tonalRamp": [
+          "oklch(15.0% 0.071 74)",
+          "oklch(26.4% 0.093 74)",
+          "oklch(37.9% 0.116 74)",
+          "oklch(49.3% 0.118 74)",
+          "oklch(60.7% 0.118 74)",
+          "oklch(72.1% 0.118 74)",
+          "oklch(83.6% 0.113 74)",
+          "oklch(95.0% 0.090 74)"
+        ]
+      },
+      "box-done": {
+        "role": "secondary",
+        "displayName": "상자 초록",
+        "canonical": "#93dba8",
+        "tonalRamp": [
+          "oklch(15.0% 0.061 153)",
+          "oklch(26.4% 0.080 153)",
+          "oklch(37.9% 0.100 153)",
+          "oklch(49.3% 0.102 153)",
+          "oklch(60.7% 0.102 153)",
+          "oklch(72.1% 0.102 153)",
+          "oklch(83.6% 0.097 153)",
+          "oklch(95.0% 0.078 153)"
+        ]
+      },
+      "box-done-2": {
+        "role": "secondary",
+        "displayName": "상자 초록 아랫단",
+        "canonical": "#3f9a5f",
+        "tonalRamp": [
+          "oklch(15.0% 0.075 152)",
+          "oklch(26.4% 0.099 152)",
+          "oklch(37.9% 0.122 152)",
+          "oklch(49.3% 0.125 152)",
+          "oklch(60.7% 0.125 152)",
+          "oklch(72.1% 0.125 152)",
+          "oklch(83.6% 0.119 152)",
+          "oklch(95.0% 0.096 152)"
+        ]
+      },
+      "card-night": {
+        "role": "neutral",
+        "displayName": "밤 이름표",
+        "canonical": "#aab3d6",
+        "tonalRamp": [
+          "oklch(15.0% 0.031 274)",
+          "oklch(26.4% 0.040 274)",
+          "oklch(37.9% 0.050 274)",
+          "oklch(49.3% 0.051 274)",
+          "oklch(60.7% 0.051 274)",
+          "oklch(72.1% 0.051 274)",
+          "oklch(83.6% 0.049 274)",
+          "oklch(95.0% 0.039 274)"
+        ]
+      },
+      "wall": {
+        "role": "tertiary",
+        "displayName": "낮 벽",
+        "canonical": "#c8eee0",
+        "tonalRamp": [
+          "oklch(15.0% 0.026 171)",
+          "oklch(26.4% 0.035 171)",
+          "oklch(37.9% 0.043 171)",
+          "oklch(49.3% 0.044 171)",
+          "oklch(60.7% 0.044 171)",
+          "oklch(72.1% 0.044 171)",
+          "oklch(83.6% 0.042 171)",
+          "oklch(95.0% 0.034 171)"
+        ]
+      },
+      "wall-2": {
+        "role": "tertiary",
+        "displayName": "낮 벽 아랫단",
+        "canonical": "#8fd6c2",
+        "tonalRamp": [
+          "oklch(15.0% 0.046 175)",
+          "oklch(26.4% 0.061 175)",
+          "oklch(37.9% 0.075 175)",
+          "oklch(49.3% 0.077 175)",
+          "oklch(60.7% 0.077 175)",
+          "oklch(72.1% 0.077 175)",
+          "oklch(83.6% 0.074 175)",
+          "oklch(95.0% 0.059 175)"
+        ]
+      },
+      "baseboard": {
+        "role": "tertiary",
+        "displayName": "낮 걸레받이",
+        "canonical": "#5aa896",
+        "tonalRamp": [
+          "oklch(15.0% 0.049 177)",
+          "oklch(26.4% 0.065 177)",
+          "oklch(37.9% 0.081 177)",
+          "oklch(49.3% 0.082 177)",
+          "oklch(60.7% 0.082 177)",
+          "oklch(72.1% 0.082 177)",
+          "oklch(83.6% 0.079 177)",
+          "oklch(95.0% 0.063 177)"
+        ]
+      },
+      "floor": {
+        "role": "tertiary",
+        "displayName": "낮 바닥",
+        "canonical": "#f4bd6c",
+        "tonalRamp": [
+          "oklch(15.0% 0.070 76)",
+          "oklch(26.4% 0.093 76)",
+          "oklch(37.9% 0.115 76)",
+          "oklch(49.3% 0.117 76)",
+          "oklch(60.7% 0.117 76)",
+          "oklch(72.1% 0.117 76)",
+          "oklch(83.6% 0.112 76)",
+          "oklch(95.0% 0.090 76)"
+        ]
+      },
+      "plank": {
+        "role": "tertiary",
+        "displayName": "낮 바닥 줄",
+        "canonical": "#dd9c47",
+        "tonalRamp": [
+          "oklch(15.0% 0.076 71)",
+          "oklch(26.4% 0.100 71)",
+          "oklch(37.9% 0.124 71)",
+          "oklch(49.3% 0.127 71)",
+          "oklch(60.7% 0.127 71)",
+          "oklch(72.1% 0.127 71)",
+          "oklch(83.6% 0.121 71)",
+          "oklch(95.0% 0.097 71)"
+        ]
+      },
+      "wood": {
+        "role": "tertiary",
+        "displayName": "나무",
+        "canonical": "#cf7c3c",
+        "tonalRamp": [
+          "oklch(15.0% 0.078 56)",
+          "oklch(26.4% 0.102 56)",
+          "oklch(37.9% 0.127 56)",
+          "oklch(49.3% 0.130 56)",
+          "oklch(60.7% 0.130 56)",
+          "oklch(72.1% 0.130 56)",
+          "oklch(83.6% 0.124 56)",
+          "oklch(95.0% 0.099 56)"
+        ]
+      },
+      "wood-2": {
+        "role": "tertiary",
+        "displayName": "짙은 나무",
+        "canonical": "#a35a26",
+        "tonalRamp": [
+          "oklch(15.0% 0.069 53)",
+          "oklch(26.4% 0.091 53)",
+          "oklch(37.9% 0.113 53)",
+          "oklch(49.3% 0.116 53)",
+          "oklch(60.7% 0.116 53)",
+          "oklch(72.1% 0.116 53)",
+          "oklch(83.6% 0.111 53)",
+          "oklch(95.0% 0.089 53)"
+        ]
+      },
+      "screen-on": {
+        "role": "tertiary",
+        "displayName": "켜진 화면",
+        "canonical": "#eafcff",
+        "tonalRamp": [
+          "oklch(15.0% 0.012 209)",
+          "oklch(26.4% 0.015 209)",
+          "oklch(37.9% 0.019 209)",
+          "oklch(49.3% 0.019 209)",
+          "oklch(60.7% 0.019 209)",
+          "oklch(72.1% 0.019 209)",
+          "oklch(83.6% 0.018 209)",
+          "oklch(95.0% 0.015 209)"
+        ]
+      },
+      "screen-off": {
+        "role": "tertiary",
+        "displayName": "꺼진 화면",
+        "canonical": "#55608a",
+        "tonalRamp": [
+          "oklch(15.0% 0.041 272)",
+          "oklch(26.4% 0.054 272)",
+          "oklch(37.9% 0.067 272)",
+          "oklch(49.3% 0.069 272)",
+          "oklch(60.7% 0.069 272)",
+          "oklch(72.1% 0.069 272)",
+          "oklch(83.6% 0.066 272)",
+          "oklch(95.0% 0.053 272)"
+        ]
+      },
+      "code": {
+        "role": "tertiary",
+        "displayName": "화면의 코드 줄",
+        "canonical": "#2f8fe8",
+        "tonalRamp": [
+          "oklch(15.0% 0.096 251)",
+          "oklch(26.4% 0.126 251)",
+          "oklch(37.9% 0.156 251)",
+          "oklch(49.3% 0.160 251)",
+          "oklch(60.7% 0.160 251)",
+          "oklch(72.1% 0.160 251)",
+          "oklch(83.6% 0.153 251)",
+          "oklch(95.0% 0.122 251)"
+        ]
+      },
+      "sky": {
+        "role": "tertiary",
+        "displayName": "낮 하늘",
+        "canonical": "#8fd0ff",
+        "tonalRamp": [
+          "oklch(15.0% 0.056 241)",
+          "oklch(26.4% 0.074 241)",
+          "oklch(37.9% 0.092 241)",
+          "oklch(49.3% 0.094 241)",
+          "oklch(60.7% 0.094 241)",
+          "oklch(72.1% 0.094 241)",
+          "oklch(83.6% 0.090 241)",
+          "oklch(95.0% 0.072 241)"
+        ]
+      },
+      "lamp-on": {
+        "role": "tertiary",
+        "displayName": "켜진 천장등",
+        "canonical": "#ffe27a",
+        "tonalRamp": [
+          "oklch(15.0% 0.077 94)",
+          "oklch(26.4% 0.101 94)",
+          "oklch(37.9% 0.126 94)",
+          "oklch(49.3% 0.128 94)",
+          "oklch(60.7% 0.128 94)",
+          "oklch(72.1% 0.128 94)",
+          "oklch(83.6% 0.122 94)",
+          "oklch(95.0% 0.098 94)"
+        ]
+      },
+      "night-ink": {
+        "role": "tertiary",
+        "displayName": "밤 외곽선",
+        "canonical": "#141833",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 275)",
+          "oklch(26.4% 0.042 275)",
+          "oklch(37.9% 0.052 275)",
+          "oklch(49.3% 0.053 275)",
+          "oklch(60.7% 0.053 275)",
+          "oklch(72.1% 0.053 275)",
+          "oklch(83.6% 0.050 275)",
+          "oklch(95.0% 0.040 275)"
+        ]
+      },
+      "night-wall": {
+        "role": "tertiary",
+        "displayName": "밤 벽",
+        "canonical": "#2f3b76",
+        "tonalRamp": [
+          "oklch(15.0% 0.061 272)",
+          "oklch(26.4% 0.080 272)",
+          "oklch(37.9% 0.099 272)",
+          "oklch(49.3% 0.101 272)",
+          "oklch(60.7% 0.101 272)",
+          "oklch(72.1% 0.101 272)",
+          "oklch(83.6% 0.097 272)",
+          "oklch(95.0% 0.078 272)"
+        ]
+      },
+      "night-wall-2": {
+        "role": "tertiary",
+        "displayName": "밤 벽 아랫단",
+        "canonical": "#253066",
+        "tonalRamp": [
+          "oklch(15.0% 0.057 272)",
+          "oklch(26.4% 0.075 272)",
+          "oklch(37.9% 0.094 272)",
+          "oklch(49.3% 0.095 272)",
+          "oklch(60.7% 0.095 272)",
+          "oklch(72.1% 0.095 272)",
+          "oklch(83.6% 0.091 272)",
+          "oklch(95.0% 0.073 272)"
+        ]
+      },
+      "night-floor": {
+        "role": "tertiary",
+        "displayName": "밤 바닥",
+        "canonical": "#8a6248",
+        "tonalRamp": [
+          "oklch(15.0% 0.039 54)",
+          "oklch(26.4% 0.051 54)",
+          "oklch(37.9% 0.063 54)",
+          "oklch(49.3% 0.065 54)",
+          "oklch(60.7% 0.065 54)",
+          "oklch(72.1% 0.065 54)",
+          "oklch(83.6% 0.062 54)",
+          "oklch(95.0% 0.050 54)"
+        ]
+      },
+      "night-sky": {
+        "role": "tertiary",
+        "displayName": "밤 하늘",
+        "canonical": "#141a3c",
+        "tonalRamp": [
+          "oklch(15.0% 0.039 273)",
+          "oklch(26.4% 0.052 273)",
+          "oklch(37.9% 0.064 273)",
+          "oklch(49.3% 0.065 273)",
+          "oklch(60.7% 0.065 273)",
+          "oklch(72.1% 0.065 273)",
+          "oklch(83.6% 0.063 273)",
+          "oklch(95.0% 0.050 273)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "ground-title": {
+        "displayName": "지반 제목",
+        "purpose": "지반의 첫째 줄. 질문이나 상태 한 문장."
+      },
+      "panel-name": {
+        "displayName": "패널 이름",
+        "purpose": "지붕의 프로젝트 이름."
+      },
+      "button": {
+        "displayName": "버튼",
+        "purpose": "지반의 버튼."
+      },
+      "list-heading": {
+        "displayName": "목록 제목",
+        "purpose": "목록 보기의 구역 제목."
+      },
+      "nav-button": {
+        "displayName": "지붕 버튼",
+        "purpose": "건물 버튼과 목록 버튼."
+      },
+      "sign": {
+        "displayName": "이름표",
+        "purpose": "단계 이름표와 말풍선."
+      },
+      "body": {
+        "displayName": "본문",
+        "purpose": "패널의 기본 글자. 숫자는 tabular-nums."
+      },
+      "field": {
+        "displayName": "입력",
+        "purpose": "메시지 입력란."
+      },
+      "caption": {
+        "displayName": "보조",
+        "purpose": "지반의 둘째 줄, 완료 수, 알약 표지, 목록의 보조 줄. 패널의 최소 글자 크기."
+      }
+    },
+    "shadows": [
+      {
+        "name": "panel",
+        "value": "0 0 0 2px #232845, 0 18px 40px rgba(35,40,69,.2), 0 6px 14px rgba(35,40,69,.14), 0 1px 3px rgba(35,40,69,.2)",
+        "purpose": "패널의 테두리와 바깥 그림자. 패널 하나에만 쓴다."
+      },
+      {
+        "name": "panel-dark-page",
+        "value": "0 0 0 2px #4a548c, 0 18px 40px rgba(0,0,0,.5), 0 6px 14px rgba(0,0,0,.36), 0 1px 3px rgba(0,0,0,.5)",
+        "purpose": "어두운 바탕 화면 위의 패널."
+      },
+      {
+        "name": "selected",
+        "value": "inset 0 0 0 2px #fffdf4, 0 0 0 2px #232845",
+        "purpose": "장면에서 선택한 캐릭터나 상자."
+      },
+      {
+        "name": "hit-focus",
+        "value": "0 0 0 4px #232845",
+        "purpose": "장면 클릭 영역의 초점. 종이색 2px 선 바깥에 더한다."
+      },
+      {
+        "name": "box-tick",
+        "value": "inset 0 -2px #b9822f",
+        "purpose": "지붕의 상자 진행 칸 아랫단. 완료 칸은 #3f9a5f."
+      }
+    ],
+    "motion": [
+      {
+        "name": "sprite-frame",
+        "value": "0.34s",
+        "purpose": "2프레임 그림이 바뀌는 간격. 약 3Hz."
+      },
+      {
+        "name": "repaint-cap",
+        "value": "12fps",
+        "purpose": "화면을 다시 그리는 횟수의 상한."
+      },
+      {
+        "name": "walk-speed",
+        "value": "30 논리 px/s",
+        "purpose": "캐릭터가 걷는 속도."
+      },
+      {
+        "name": "bubble-hold",
+        "value": "3.2s",
+        "purpose": "말풍선이 보이는 시간."
+      },
+      {
+        "name": "ground-turn",
+        "value": "background-color .3s cubic-bezier(.16,1,.3,1)",
+        "purpose": "지반의 바탕색 전환."
+      },
+      {
+        "name": "ground-rise",
+        "value": ".32s cubic-bezier(.16,1,.3,1), translateY(7px), opacity .5, 지연 0.05s씩",
+        "purpose": "지반이 분홍으로 바뀔 때 안의 요소가 올라온다."
+      },
+      {
+        "name": "press",
+        "value": "scale .96, .15s cubic-bezier(.2,0,0,1)",
+        "purpose": "버튼을 누를 때."
+      },
+      {
+        "name": "hover",
+        "value": "background-color .15s",
+        "purpose": "버튼과 클릭 영역의 hover."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "프레임을 바꾸지 않는다. 걷지 않고 목적지에 바로 놓는다. 지반 전환, 누름 축소, hover 전환을 끈다."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "panel-narrow",
+        "value": "440px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "지반: 평소",
+      "kind": "custom",
+      "refersTo": "ground",
+      "description": "남색 지반. 상태 한 문장과 단위 후 정지, 중단 버튼이 있다.",
+      "html": "<footer class=\"ds-ground\"><div class=\"ds-g-icon\"></div><div class=\"ds-g-text\"><strong>조용합니다. 둘이 일하는 중입니다</strong><small>U3 모니터 조회판: 구현 단계</small></div><div class=\"ds-g-btns\"><button type=\"button\">단위 후 정지</button><button type=\"button\">중단</button></div></footer>",
+      "css": ".ds-ground{min-height:56px;display:flex;align-items:center;gap:10px;padding:6px 10px;background:#232845;color:#fffdf4;border-top:2px solid #232845;font:12px/1.3 -apple-system,BlinkMacSystemFont,\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif} .ds-ground .ds-g-icon{flex:none;width:36px;height:36px;border-radius:50%;background:#fffdf4;border:2px solid #fffdf4;box-shadow:0 0 0 1px #232845} .ds-ground .ds-g-text{flex:1 1 150px;min-width:0} .ds-ground strong{display:block;font:400 17px/1.2 \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .ds-ground small{display:block;font-size:11px;font-weight:600;color:#c9d3ee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .ds-ground .ds-g-btns{display:flex;gap:8px;margin-left:auto} .ds-ground button{font:400 14px/1 \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;height:32px;padding:1px 12px 0;border-radius:8px;border:2px solid #fffdf4;background:transparent;color:#fffdf4;white-space:nowrap;min-width:40px;cursor:pointer;transition:background-color .15s, filter .15s, scale .15s cubic-bezier(.2,0,0,1)} .ds-ground button:hover{background:rgba(255,253,244,.16)} .ds-ground button:active{scale:.96} .ds-ground button:focus-visible{outline:2px solid #fffdf4;outline-offset:2px} .ds-ground button.ds-go{background:#fffdf4;color:#232845} .ds-ground button.ds-go:hover{background:#fffdf4;filter:brightness(1.18)} @media (prefers-reduced-motion: reduce){.ds-ground button{transition:none} .ds-ground button:active{scale:none}}"
+    },
+    {
+      "name": "지반: 당신 차례",
+      "kind": "custom",
+      "refersTo": "ground-turn",
+      "description": "분홍 지반. 결정 대기, 단위 막힘, 환경·한도에만 쓴다. 채운 버튼 하나가 주된 답이다.",
+      "html": "<footer class=\"ds-ground\"><div class=\"ds-g-icon\"></div><div class=\"ds-g-text\"><strong>정본을 이벤트 파일로 옮길까요?</strong><small>결정 대기. U4와 U5가 이 답을 기다립니다</small></div><div class=\"ds-g-btns\"><button type=\"button\" class=\"ds-go\">옮긴다</button><button type=\"button\">그대로 둔다</button></div></footer>",
+      "css": ".ds-ground{min-height:56px;display:flex;align-items:center;gap:10px;padding:6px 10px;background:#ff4f9a;color:#232845;border-top:2px solid #232845;font:12px/1.3 -apple-system,BlinkMacSystemFont,\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif} .ds-ground .ds-g-icon{flex:none;width:36px;height:36px;border-radius:50%;background:#fffdf4;border:2px solid #232845;box-shadow:0 0 0 1px #ff4f9a} .ds-ground .ds-g-text{flex:1 1 150px;min-width:0} .ds-ground strong{display:block;font:400 17px/1.2 \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .ds-ground small{display:block;font-size:11px;font-weight:600;color:#232845;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .ds-ground .ds-g-btns{display:flex;gap:8px;margin-left:auto} .ds-ground button{font:400 14px/1 \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;height:32px;padding:1px 12px 0;border-radius:8px;border:2px solid #232845;background:transparent;color:#232845;white-space:nowrap;min-width:40px;cursor:pointer;transition:background-color .15s, filter .15s, scale .15s cubic-bezier(.2,0,0,1)} .ds-ground button:hover{background:rgba(35,40,69,.14)} .ds-ground button:active{scale:.96} .ds-ground button:focus-visible{outline:2px solid #232845;outline-offset:2px} .ds-ground button.ds-go{background:#232845;color:#ff4f9a} .ds-ground button.ds-go:hover{background:#232845;filter:brightness(1.18)} @media (prefers-reduced-motion: reduce){.ds-ground button{transition:none} .ds-ground button:active{scale:none}}"
+    },
+    {
+      "name": "지붕",
+      "kind": "nav",
+      "refersTo": "roof",
+      "description": "길 찾기와 다른 층의 알림. 건물 버튼, 이름, 상자 진행 칸, 완료 수, 다른 층 알림, 목록 버튼, 예시 표지 순서다.",
+      "html": "<header class=\"ds-roof\"><button type=\"button\" aria-pressed=\"false\">건물</button><strong>mmCode</strong><span class=\"ds-units\"><i class=\"ds-d\"></i><i class=\"ds-d\"></i><i></i><i></i><i></i><i></i></span><span class=\"ds-count\">완료 2/6</span><span class=\"ds-sp\"></span><button type=\"button\" class=\"ds-else\">모바일 앱 층 한도 초과</button><button type=\"button\" aria-pressed=\"false\">목록</button><span class=\"ds-demo\">예시</span></header>",
+      "css": ".ds-roof{height:28px;display:flex;align-items:center;gap:8px;padding:0 8px;background:#232845;color:#fffdf4;font:12px/1.3 -apple-system,BlinkMacSystemFont,\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;font-variant-numeric:tabular-nums} .ds-roof button{font:400 13px/1 \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;color:#fffdf4;background:#39406b;border:0;border-radius:5px;padding:4px 8px 3px;white-space:nowrap;min-width:40px;cursor:pointer;transition:background-color .15s, scale .15s cubic-bezier(.2,0,0,1)} .ds-roof button:hover{background:#4a548c} .ds-roof button:active{scale:.96} .ds-roof button:focus-visible{outline:2px solid #fffdf4;outline-offset:2px} .ds-roof button[aria-pressed=\"true\"]{background:#fffdf4;color:#232845} .ds-roof strong{font:400 16px/1 \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;letter-spacing:.01em;white-space:nowrap} .ds-roof .ds-units{display:flex;gap:3px;align-items:center} .ds-roof .ds-units i{width:10px;height:8px;background:#eab85f;box-shadow:inset 0 -2px #b9822f} .ds-roof .ds-units i.ds-d{background:#93dba8;box-shadow:inset 0 -2px #3f9a5f} .ds-roof .ds-count{font-size:11px;color:#c9d3ee;white-space:nowrap} .ds-roof .ds-sp{flex:1;min-width:0} .ds-roof button.ds-else{background:#ff4f9a;color:#232845;font:600 11px/1 -apple-system,BlinkMacSystemFont,\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;padding:4px 8px;border-radius:9px} .ds-roof button.ds-else:hover{background:#ff4f9a;filter:brightness(1.08)} .ds-roof .ds-demo{font-size:11px;color:#c9d3ee;border:1px solid #4a548c;border-radius:3px;padding:0 4px;white-space:nowrap} @media (prefers-reduced-motion: reduce){.ds-roof button{transition:none} .ds-roof button:active{scale:none}}"
+    },
+    {
+      "name": "단계 이름표",
+      "kind": "chip",
+      "refersTo": "stage-sign",
+      "description": "장면의 벽에 붙는 단계 이름. 누를 수 없다. 밤에는 바탕이 #aab3d6이다.",
+      "html": "<span class=\"ds-stage\">대기</span> <span class=\"ds-stage\">구현</span> <span class=\"ds-stage ds-night\">검증</span>",
+      "css": ".ds-stage{display:inline-block;font:400 12px/15px \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;color:#232845;white-space:nowrap;background:#fffdf4;border:2px solid #232845;border-radius:2px;padding:1px 6px 0} .ds-stage.ds-night{background:#aab3d6}"
+    },
+    {
+      "name": "말풍선",
+      "kind": "custom",
+      "refersTo": "bubble",
+      "description": "지금 쓰는 도구와 대상 한 줄. 상태가 바뀐 직후 3.2초 동안 하나만 보인다. 주의 상태에는 쓰지 않는다.",
+      "html": "<div class=\"ds-bub\"><span>Edit status.sh</span></div>",
+      "css": ".ds-bub{position:relative;display:inline-block;margin-bottom:8px;font:400 12px/15px \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;color:#232845;background:#fffdf4;border:2px solid #232845;border-radius:9px;padding:1px 7px 0;white-space:nowrap} .ds-bub span{display:block;overflow:hidden;text-overflow:ellipsis} .ds-bub::after{content:\"\";position:absolute;left:50%;bottom:-5px;width:6px;height:6px;margin-left:-3px;background:#fffdf4;border:solid #232845;border-width:0 2px 2px 0;transform:rotate(45deg)}"
+    },
+    {
+      "name": "메시지 입력란",
+      "kind": "input",
+      "refersTo": "message-field",
+      "description": "지반에서 캐릭터에게 보낼 메시지를 적는 칸.",
+      "html": "<div class=\"ds-field\"><label for=\"ds-msg\">일꾼에게 보낼 메시지</label><input id=\"ds-msg\" type=\"text\" placeholder=\"예: 시험부터 다시 실행해 줘\"></div>",
+      "css": ".ds-field{background:#232845;padding:6px 10px;font:12px/1.3 -apple-system,BlinkMacSystemFont,\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif} .ds-field label{display:block;font-size:11px;line-height:1.2;font-weight:600;color:#c9d3ee;margin-bottom:1px} .ds-field input{width:100%;height:26px;border:2px solid #fffdf4;border-radius:7px;background:#fffdf4;color:#232845;padding:0 8px;font:13px -apple-system,BlinkMacSystemFont,\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif} .ds-field input::placeholder{color:#4d5677} .ds-field input:focus-visible{outline:2px solid #4a548c;outline-offset:-2px}"
+    },
+    {
+      "name": "목록의 꼬리표",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "목록 보기에서 단계와 멈춤 분류를 적는다. 분홍은 결정 대기, 단위 막힘, 환경·한도다. 남색은 사용자 정지다.",
+      "html": "<span class=\"ds-tag\">구현</span> <span class=\"ds-tag ds-turn\">결정 대기</span> <span class=\"ds-tag ds-halt\">사용자 정지</span>",
+      "css": ".ds-tag{display:inline-block;font:400 11px/14px \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;color:#232845;background:#fffdf4;border:1.5px solid #232845;border-radius:2px;padding:1px 5px 0;white-space:nowrap} .ds-tag.ds-turn{background:#ff4f9a} .ds-tag.ds-halt{background:#232845;color:#fffdf4}"
+    },
+    {
+      "name": "목록의 줄",
+      "kind": "card",
+      "refersTo": "list",
+      "description": "같은 정보를 글자로 보여 주는 목록의 구역 하나.",
+      "html": "<section class=\"ds-list\"><h3>단위</h3><ul><li><b>U3</b> <span>모니터 조회판</span> <span class=\"ds-ltag\">검증</span><span class=\"ds-meta\">검사 명령 통과 12/12</span></li><li><b>U4</b> <span>클릭 개입</span> <span class=\"ds-ltag\">대기</span></li></ul></section>",
+      "css": ".ds-list{background:#fffdf4;color:#232845;padding:8px 12px 12px;font:12px/1.3 -apple-system,BlinkMacSystemFont,\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif} .ds-list h3{font:400 14px/1.2 \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;margin:0 0 3px} .ds-list ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px} .ds-list li{border-top:1.5px solid #d9d6c4;padding-top:4px} .ds-list b{font:400 13px/1.2 \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif} .ds-list .ds-meta{display:block;color:#4d5677;font-size:11px} .ds-list .ds-ltag{font:400 11px/14px \"Jua\",\"Apple SD Gothic Neo\",\"Noto Sans KR\",\"Malgun Gothic\",sans-serif;border:1.5px solid #232845;border-radius:2px;padding:1px 5px 0;white-space:nowrap}"
+    }
+  ],
+  "narrative": {
+    "northStar": "단면도 그림책",
+    "overview": "패널 자체가 건물의 단면이다. 지붕은 길 찾기를 맡는다. 방은 현황을 보여 준다. 지반은 사용자가 나설 일을 말한다. 사용자는 지반의 색으로 나설지 말지를 안다.\n\n그림은 굵은 남색 외곽선과 채도 있는 단색 면으로 그린다. 픽셀 동물이 사무실에서 일한다. 장소가 단계이고, 상자가 단위다. 아무 일이 없으면 화면이 조용하다. 상태 점과 줄 목록으로 된 메뉴 막대 표준 배치를 쓰지 않는다.\n\n정보의 자리는 고정한다. 내용만 바뀐다. 낮과 밤에 틀은 그대로이고 장면의 색만 바뀐다.",
+    "keyCharacteristics": [
+      "패널은 지붕, 장면, 지반의 세 층이다.",
+      "분홍은 \"당신 차례\"라는 한 가지 뜻만 가진다.",
+      "움직이는 것은 모두 정보다.",
+      "같은 정보를 글자 목록으로도 제공한다.",
+      "그림자는 패널 바깥에만 있다. 패널 안은 평평하다."
+    ],
+    "rules": [
+      {
+        "name": "분홍 한 가지 뜻 규칙",
+        "body": "분홍 면과 분홍 표시는 \"당신 차례\"에만 쓴다. 사용자 정지는 사용자가 건 상태이므로 분홍을 쓰지 않는다. 사용자 정지는 남색 바탕과 빨강 표지판으로 표시한다.",
+        "section": "colors"
+      },
+      {
+        "name": "같은 틀 규칙",
+        "body": "낮과 밤에 지붕과 지반은 같은 남색(`ink`)이다. 밤에는 장면의 색만 `PAL.night`로 바뀐다. 지반의 얼굴 그림은 밤에도 낮 색으로 그린다.",
+        "section": "colors"
+      },
+      {
+        "name": "색과 모양 규칙",
+        "body": "상태를 색만으로 구분하지 않는다. 분홍 표시에는 물음표나 느낌표가 함께 있다. 지반과 목록에는 글자가 함께 있다.",
+        "section": "colors"
+      },
+      {
+        "name": "11px 바닥 규칙",
+        "body": "패널 안의 글자는 11px보다 작게 쓰지 않는다.",
+        "section": "typography"
+      },
+      {
+        "name": "글꼴 두 개 규칙",
+        "body": "Jua는 제목, 버튼, 이름표에만 쓴다. 문장과 숫자에는 시스템 글꼴을 쓴다.",
+        "section": "typography"
+      },
+      {
+        "name": "한 번만 말하기 규칙",
+        "body": "같은 사실을 두 번 적지 않는다. 지붕은 다른 층의 알림만 말한다. 지반은 지금 보는 층의 일만 말한다. 건물 보기의 지반은 모든 층 중에서 가장 급한 일 하나를 말한다.",
+        "section": "layout"
+      },
+      {
+        "name": "자리 고정 규칙",
+        "body": "정보의 자리는 바꾸지 않는다. 내용만 바꾼다. 지반은 상태가 달라져도 얼굴 칸, 글, 버튼의 순서가 같다.",
+        "section": "layout"
+      },
+      {
+        "name": "40px 클릭 영역 규칙",
+        "body": "누를 수 있는 것의 클릭 영역은 가로세로 40px 이상이다. 보이는 크기가 작으면 보이지 않는 영역을 넓힌다. 예외는 선반의 상자 하나다. 상자의 클릭 영역은 24×32px이다. 선반에서 상자는 화면 24px 간격으로 붙어 있다. 그래서 가로는 넓히지 않고 세로만 넓힌다.",
+        "section": "layout"
+      },
+      {
+        "name": "안은 평평하게 규칙",
+        "body": "패널 안의 요소에는 그림자를 넣지 않는다. 구분은 외곽선과 면의 색으로 한다.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do 분홍(#ff4f9a)을 결정 대기, 단위 막힘, 환경·한도에만 쓴다.",
+      "Do 지붕과 지반을 낮과 밤에 같은 남색(#232845)으로 둔다. 밤에는 장면의 색만 바꾼다.",
+      "Do 누를 수 있는 것의 클릭 영역을 40px 이상으로 만든다. 예외는 선반의 상자(24×32px)뿐이다.",
+      "Do 글자를 11px 이상으로 쓴다.",
+      "Do 글자와 바탕의 대비를 4.68:1 이상으로 둔다. 가장 낮은 쌍은 분홍 바탕 위의 남색 글자다.",
+      "Do 주의 표시에 물음표나 느낌표 모양을 함께 그린다.",
+      "Do 종과 털 무늬를 `HARNESS` 표와 `COAT` 표에서만 정한다.",
+      "Do 지반에 채운 버튼을 하나만 둔다.",
+      "Do 움직임 줄이기 설정에서 프레임을 멈춘다."
+    ],
+    "donts": [
+      "Don't 분홍을 장식, 강조, 사용자 정지에 쓰지 않는다.",
+      "Don't 같은 사실을 지붕과 지반에 함께 적지 않는다.",
+      "Don't 주의 상태에 글자 말풍선을 쓰지 않는다.",
+      "Don't 캐릭터에 머리띠나 역할 소품을 붙이지 않는다.",
+      "Don't 이벤트가 없는데 움직이는 그림을 넣지 않는다.",
+      "Don't 패널 안의 요소에 그림자를 넣지 않는다.",
+      "Don't 주의 표시를 깜박이게 하지 않는다. 1px 움직임만 쓴다.",
+      "Don't 장면 캔버스를 보간해서 확대하지 않는다.",
+      "Don't 상태 점과 줄 목록으로 된 메뉴 막대 표준 배치를 쓰지 않는다."
+    ]
+  }
+}

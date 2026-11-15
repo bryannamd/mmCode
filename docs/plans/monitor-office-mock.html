@@ -1,0 +1,883 @@
+<title>mmCode 픽셀 사무실</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<style>
+/* 배치: 왼쪽에 메뉴 막대와 480×300 패널(주인공), 오른쪽에 읽는 법. 좁은 화면에서는 위아래로 쌓는다. */
+:root{
+  --ink:#232845; --ink-2:#39406b; --ink-3:#4a548c; --paper:#fffdf4; --pink:#ff4f9a; --green:#3fc46f; --amber:#ffc23d;
+  --on-ink:#fffdf4; --on-ink-sub:#c9d3ee; --paper-sub:#4d5677; --paper-line:#d9d6c4; --box:#eab85f; --box-2:#b9822f; --box-done:#93dba8; --box-done-2:#3f9a5f; --card-night:#aab3d6;
+  --page:#eaf3ef; --page-fg:#232845; --page-sub:#4d5677; --page-line:#bfd0c9; --page-btn:#fffdf4; --bar:#d3e2dc; --bar-dim:#a9bdb5; --focus:#232845; --edge:#232845;
+  --shadow:0 18px 40px rgba(35,40,69,.2), 0 6px 14px rgba(35,40,69,.14), 0 1px 3px rgba(35,40,69,.2);
+  --display:"Jua","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --page:#141833; --page-fg:#fffdf4; --page-sub:#c9d3ee; --page-line:#39406b; --page-btn:#232845; --bar:#262d52; --bar-dim:#4a548c; --focus:#fffdf4; --edge:#4a548c;
+  --shadow:0 18px 40px rgba(0,0,0,.5), 0 6px 14px rgba(0,0,0,.36), 0 1px 3px rgba(0,0,0,.5); color-scheme:dark } }
+:root[data-theme="dark"]{
+  --page:#141833; --page-fg:#fffdf4; --page-sub:#c9d3ee; --page-line:#39406b; --page-btn:#232845; --bar:#262d52; --bar-dim:#4a548c; --focus:#fffdf4; --edge:#4a548c;
+  --shadow:0 18px 40px rgba(0,0,0,.5), 0 6px 14px rgba(0,0,0,.36), 0 1px 3px rgba(0,0,0,.5); color-scheme:dark }
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+/* 옆 여백은 max(16px, 안전 영역)이다. .wrap 이 16px 을 주고, body 가 안전 영역이 16px 을 넘는 만큼만 더한다. */
+body{background:var(--page);color:var(--page-fg);font-family:var(--body);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  padding-left:max(0px, env(safe-area-inset-left, 0px) - 16px);padding-right:max(0px, env(safe-area-inset-right, 0px) - 16px)}
+::selection{background:var(--amber);color:var(--ink)}
+button,input{font:inherit}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:disabled{cursor:not-allowed;opacity:.5}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+h1,h2,h3,p,dl,dd,ul,ol{margin:0}
+ul,ol{padding:0;list-style:none}
+/* 문서 틀 없이 이 파일만 읽는 검사 도구도 글자 뒤의 바탕색을 알 수 있게 .wrap 에도 바탕을 적는다 */
+.wrap{max-width:1012px;margin:0 auto;display:flex;flex-direction:column;gap:24px;background:var(--page);color:var(--page-fg);
+  padding:28px 16px 48px}
+.intro h1{font:400 30px/1.2 var(--display);letter-spacing:.01em;text-wrap:balance}
+.intro p{color:var(--page-sub);max-width:60ch;margin-top:6px;text-wrap:pretty}
+.cols{display:grid;grid-template-columns:minmax(0,480px) minmax(0,1fr);gap:40px;align-items:start}
+@media (max-width:900px){ .cols{grid-template-columns:minmax(0,1fr);gap:28px} }
+.stagecol{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:480px}
+
+/* 메뉴 막대 그림 */
+.menubar{height:24px;border-radius:8px;background:var(--bar);display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 10px}
+.menubar i{width:14px;height:8px;border-radius:2px;background:var(--bar-dim)}
+.menubar b{width:26px;height:18px;border-radius:5px;background:var(--ink);display:grid;place-items:center}
+.menubar canvas{width:12px;height:11px;image-rendering:pixelated}
+
+/* 패널: 지붕 28 + 장면 216 + 지반 56 = 300 */
+.panel{--focus:var(--on-ink);width:100%;max-width:480px;border-radius:10px;overflow:hidden;background:var(--ink);color:var(--on-ink);box-shadow:0 0 0 2px var(--edge), var(--shadow);container-type:inline-size;font-size:12px;line-height:1.3;font-variant-numeric:tabular-nums}
+.roof{position:relative;z-index:2;height:28px;display:flex;align-items:center;gap:8px;padding:0 8px;background:var(--ink)}
+.roof button{position:relative;font:400 13px/1 var(--display);color:var(--on-ink);background:var(--ink-2);border:0;border-radius:5px;padding:4px 8px 3px;white-space:nowrap;min-width:40px;transition:background-color .15s, scale .15s cubic-bezier(.2,0,0,1)}
+.roof button::after{content:"";position:absolute;inset:-4px -3px -16px}
+.roof button.else::after{inset:-5px -3px -16px}
+.roof button:hover{background:var(--ink-3)}
+.roof button:active{scale:.96}
+.roof button[aria-pressed="true"]{background:var(--paper);color:var(--ink)}
+.name{font:400 16px/1 var(--display);letter-spacing:.01em;white-space:nowrap}
+.units{display:flex;gap:3px;align-items:center}
+.units i{width:10px;height:8px;background:var(--box);box-shadow:inset 0 -2px var(--box-2)}
+.units i.d{background:var(--box-done);box-shadow:inset 0 -2px var(--box-done-2)}
+.count{font-variant-numeric:tabular-nums;font-size:11px;color:var(--on-ink-sub);white-space:nowrap}
+.sp{flex:1;min-width:0}
+.roof button.else{--focus:var(--on-ink);background:var(--pink);color:var(--ink);font:600 11px/1 var(--body);padding:4px 8px;border-radius:9px}
+.roof button.else:hover{background:var(--pink);filter:brightness(1.08)}
+.else .short{display:none}
+.demo{font-size:11px;color:var(--on-ink-sub);border:1px solid var(--ink-3);border-radius:3px;padding:0 4px;white-space:nowrap}
+@container (max-width:440px){ .rail .stage{font-size:11px;padding:1px 4px 0;border-width:1.5px} .units{display:none} .else .long{display:none} .else .short{display:inline} .ground{flex-wrap:wrap} .g-text{flex-basis:calc(100% - 46px)} .g-text strong,.g-text small{white-space:normal;overflow-wrap:anywhere} .g-text strong .pill{display:inline-block;margin:2px 0;white-space:normal;line-height:1.3} .g-btns{width:100%} .panel .list{grid-template-columns:minmax(0,1fr)} .panel .list section.wide{grid-column:auto} }
+
+.scene{position:relative;aspect-ratio:480/216;background:var(--ink);overflow:hidden}
+.scene canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+.scene #fx{pointer-events:none}
+.stage,.fname{position:absolute;font:400 12px/15px var(--display);color:var(--ink);white-space:nowrap;pointer-events:none}
+.stage{top:20.4%;transform:translateX(-50%);background:var(--paper);border:2px solid var(--ink);border-radius:2px;padding:1px 6px 0}
+.scene.night .stage{background:var(--card-night)}
+.fname{display:flex;align-items:center;padding:1px 0 0 7px;font-size:13px;overflow:hidden}
+.hits{position:absolute;inset:0}
+.hit{--focus:var(--paper);position:absolute;background:transparent;border:0;padding:0;border-radius:6px;transition:background-color .15s}
+.hit::after{content:"";position:absolute;inset:-4px}
+.hit.unit::after{inset:-4px 0}
+.hit.floor::after{inset:-2px 0}
+.hit:hover{background:rgba(255,253,244,.28)}
+.hit:focus-visible{outline:2px solid var(--paper);outline-offset:0;box-shadow:0 0 0 4px var(--ink)}
+.hit[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--paper), 0 0 0 2px var(--ink)}
+.hit.actor{z-index:1}
+.hit.floor{border-radius:0}
+.bub{position:absolute;transform:translate(-50%,-100%);font:400 12px/15px var(--display);color:var(--ink);background:var(--paper);border:2px solid var(--ink);border-radius:9px;padding:1px 7px 0;white-space:nowrap;max-width:62%;pointer-events:none}
+.bub span{display:block;overflow:hidden;text-overflow:ellipsis}
+.bub::after{content:"";position:absolute;left:calc(50% + var(--tx, 0px));bottom:-5px;width:6px;height:6px;margin-left:-3px;background:var(--paper);border:solid var(--ink);border-width:0 2px 2px 0;transform:rotate(45deg)}
+
+/* 지반: 평소 남색, 당신 차례에만 분홍 */
+.ground{--g-fg:var(--on-ink);--g-bg:var(--ink);--g-sub:var(--on-ink-sub);--g-hover:rgba(255,253,244,.16);--focus:var(--g-fg);
+  min-height:56px;display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--g-bg);color:var(--g-fg);border-top:2px solid var(--ink);transition:background-color .3s cubic-bezier(.16,1,.3,1)}
+.ground.turn{--g-fg:var(--ink);--g-bg:var(--pink);--g-sub:var(--ink);--g-hover:rgba(35,40,69,.14)}
+.ground.enter > *{animation:rise .32s cubic-bezier(.16,1,.3,1) backwards}
+.ground.enter > :nth-child(2){animation-delay:.05s}
+.ground.enter > :nth-child(3){animation-delay:.1s}
+@keyframes rise{from{transform:translateY(7px);opacity:.5}}
+.g-icon{flex:none;width:36px;height:36px;border-radius:50%;background:var(--paper);border:2px solid var(--ink);box-shadow:0 0 0 1px var(--g-bg);overflow:hidden;display:grid;place-items:center}
+.ground:not(.turn) .g-icon{border-color:var(--paper)}
+.g-icon canvas{width:32px;height:32px;image-rendering:pixelated}
+.g-text{flex:1 1 150px;min-width:0}
+.g-text strong{display:block;font:400 17px/1.2 var(--display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-text strong .pill{font:600 11px/1 var(--body);border:1.5px solid var(--g-fg);border-radius:8px;padding:2px 6px;margin-left:6px;vertical-align:2px;white-space:nowrap}
+.g-text small{display:block;font-size:11px;font-weight:600;color:var(--g-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-text label{display:block;font-size:11px;line-height:1.2;font-weight:600;color:var(--g-sub);margin-bottom:1px}
+.g-text input{width:100%;height:26px;border:2px solid var(--paper);border-radius:7px;background:var(--paper);color:var(--ink);padding:0 8px;font-size:13px;caret-color:var(--ink)}
+.g-text input::placeholder{color:var(--paper-sub)}
+.g-text input:focus-visible{outline:2px solid var(--ink-3);outline-offset:-2px}
+.g-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+.btn{position:relative;font:400 14px/1 var(--display);height:32px;padding:1px 12px 0;border-radius:8px;border:2px solid var(--g-fg);background:transparent;color:var(--g-fg);white-space:nowrap;min-width:40px;transition:background-color .15s, filter .15s, scale .15s cubic-bezier(.2,0,0,1)}
+.btn::after{content:"";position:absolute;inset:-6px -2px}
+.btn.x::after{inset:-6px}
+.btn:hover:not(:disabled){background:var(--g-hover)}
+.btn:active:not(:disabled){scale:.96}
+.btn.go{background:var(--g-fg);color:var(--g-bg)}
+.btn.go:hover:not(:disabled){background:var(--g-fg);filter:brightness(1.18)}
+.btn.x{width:32px;padding:0;display:grid;place-items:center;border-color:transparent}
+.btn.x svg{width:12px;height:12px;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;fill:none}
+
+/* 목록 보기: 같은 정보를 글자로. 지반은 그대로 아래에 있다 */
+.list{--focus:var(--ink);height:216px;overflow-y:auto;background:var(--paper);color:var(--ink);padding:8px 12px 12px;scrollbar-width:thin;scrollbar-color:var(--ink-3) transparent;display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:8px 14px;align-content:start}
+.list section{min-width:0}
+.list section.wide{grid-column:1 / -1}
+.list h3{font:400 14px/1.2 var(--display);margin-bottom:3px}
+.list section > ul,.list section > ol{display:flex;flex-direction:column;gap:4px}
+.list li{border-top:1.5px solid var(--paper-line);padding-top:4px}
+.list b{font:400 13px/1.2 var(--display)}
+.list .meta{display:block;flex-basis:100%;color:var(--paper-sub);font-size:11px}
+.l-agent{display:flex;gap:8px;align-items:flex-start}
+.l-agent canvas{flex:none;width:32px;height:32px;image-rendering:pixelated}
+.l-agent p{min-width:0}
+.l-unit{display:flex;flex-wrap:wrap;align-items:baseline;gap:1px 6px}
+.l-unit .ttl{min-width:0}
+.tag{font:400 11px/14px var(--display);border:1.5px solid var(--ink);border-radius:2px;padding:1px 5px 0;white-space:nowrap}
+.tag.turn{background:var(--pink)}
+.tag.halt{background:var(--ink);color:var(--paper)}
+.st{font-size:11px;font-weight:600;white-space:nowrap}
+
+/* 패널 바깥: 시연 조작과 읽는 법 */
+.ctl{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px}
+.ctl div{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.ctl span{font-size:13px;color:var(--page-sub);margin-right:2px}
+.ctl button{position:relative;min-width:40px;font-size:13px;color:var(--page-fg);background:var(--page-btn);border:1.5px solid var(--page-line);border-radius:7px;padding:5px 10px;transition:border-color .15s, scale .15s cubic-bezier(.2,0,0,1)}
+.ctl button::after{content:"";position:absolute;inset:-4px 0}
+.ctl button:hover{border-color:var(--page-fg)}
+.ctl button:active{scale:.96}
+.ctl button[aria-pressed="true"]{background:var(--page-fg);color:var(--page);border-color:var(--page-fg)}
+.legend{min-width:0;display:flex;flex-direction:column;gap:6px}
+.legend h2{font:400 20px/1.2 var(--display)}
+.legend h3{font:400 15px/1.2 var(--display);margin-top:14px;padding-top:12px;border-top:1.5px solid var(--page-line)}
+.legend dl{display:grid;grid-template-columns:7.5em minmax(0,1fr);gap:4px 14px;font-size:14px}
+.legend dt{font-weight:600;display:flex;align-items:center;gap:6px}
+.legend dt.top{align-items:flex-start}
+.legend canvas{flex:none;width:32px;height:32px;image-rendering:pixelated;border-radius:50%;background:var(--paper);box-shadow:0 0 0 1.5px var(--page-line)}
+.coats{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px}
+.coats span{display:inline-flex;align-items:center;gap:6px}
+.legend dd{color:var(--page-sub);min-width:0;text-wrap:pretty}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin:0 3px 0 6px;box-shadow:0 0 0 1px var(--page-line)}
+.sw:first-child{margin-left:0}
+.note{font-size:13px;color:var(--page-sub);margin-top:14px;max-width:60ch;text-wrap:pretty}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media (prefers-reduced-motion: reduce){ .ground{transition:none} .ground.enter > *{animation:none} button:active{scale:none} button,.hit{transition:none} }
+</style>
+
+<div class="wrap">
+  <header class="intro">
+    <h1>mmCode 픽셀 사무실</h1>
+    <p>메뉴 막대에서 여는 480×300 패널의 시안입니다. 화면의 값은 모두 예시 데이터입니다.</p>
+  </header>
+
+  <div class="cols">
+    <div class="stagecol">
+      <div class="menubar" aria-hidden="true"><i></i><i></i><b><canvas id="mb" width="12" height="11"></canvas></b><i></i></div>
+
+      <section class="panel" id="panel" aria-label="mmCode 모니터 패널">
+        <header class="roof">
+          <button id="nav-b" type="button" aria-pressed="false">건물</button>
+          <strong class="name" id="proj">mmCode</strong>
+          <span class="units" id="units" aria-hidden="true"></span>
+          <span class="count" id="count"></span>
+          <span class="sp"></span>
+          <button id="else" class="else" type="button" aria-label="다른 층 알림: 모바일 앱 층 한도 초과. 건물 보기 열기" hidden><span class="long">모바일 앱 층 한도 초과</span><span class="short">다른 층 1건</span></button>
+          <button id="nav-l" type="button" aria-pressed="false">목록</button>
+          <span class="demo">예시</span>
+        </header>
+        <div class="scene" id="scene">
+          <canvas id="cv" width="240" height="108" role="img" aria-label="픽셀 사무실 장면"></canvas>
+          <canvas id="fx" width="240" height="108" aria-hidden="true"></canvas>
+          <div class="rail" id="rail"></div>
+          <div class="hits" id="hits"></div>
+          <div id="bubs" aria-hidden="true"></div>
+        </div>
+        <div class="list" id="list" role="region" tabindex="0" aria-label="글자 목록" hidden></div>
+        <footer class="ground" id="ground" aria-live="polite"></footer>
+      </section>
+
+      <div class="ctl" role="group" aria-label="시연 조작">
+        <div><span>상황</span>
+          <button type="button" data-jump="quiet">진행 중</button>
+          <button type="button" data-jump="decision">결정 대기</button>
+          <button type="button" data-jump="blocked">단위 막힘</button>
+          <button type="button" data-jump="stopped">사용자 정지</button>
+          <button type="button" data-jump="reset">처음부터</button>
+        </div>
+        <div><span>다른 층</span>
+          <button type="button" id="else-t" aria-pressed="false">한도 초과 알림</button>
+        </div>
+        <div><span>시간</span>
+          <button type="button" data-time="auto" aria-pressed="true">자동</button>
+          <button type="button" data-time="day" aria-pressed="false">낮</button>
+          <button type="button" data-time="night" aria-pressed="false">밤</button>
+        </div>
+      </div>
+    </div>
+
+    <section class="legend" aria-labelledby="lg">
+      <h2 id="lg">읽는 법</h2>
+      <h3>장소가 단계입니다</h3>
+      <dl>
+        <dt>왼쪽 선반</dt><dd>대기. 아직 시작하지 않은 단위</dd>
+        <dt>책상</dt><dd>구현. 모니터와 천장등이 켜지면 도구를 쓰는 중</dd>
+        <dt>시험대</dt><dd>검증. 등이 노랑이면 실행 중, 초록이면 통과, 빨강이면 실패</dd>
+        <dt>벽 화면</dt><dd>검수</dd>
+        <dt>오른쪽 선반</dt><dd>완료</dd>
+        <dt>호출 벨</dt><dd>결정 대기. 분홍으로 바뀌면 당신 차례</dd>
+        <dt>문 옆 표지판</dt><dd>사용자 정지. 단위 후 정지나 즉시 중단을 걸었음</dd>
+        <dt>상자의 느낌표</dt><dd>단위 막힘</dd>
+        <dt>머리 위 느낌표</dt><dd>환경·한도</dd>
+        <dt>소파</dt><dd>할 일이 없는 담당자</dd>
+      </dl>
+      <h3>캐릭터</h3>
+      <dl>
+        <dt><canvas data-coat="tuxedo" width="16" height="16"></canvas>고양이</dt><dd>claude-code</dd>
+        <dt><canvas data-coat="beagle" width="16" height="16"></canvas>개</dt><dd>codex. 기본 모델은 비글, 가벼운 모델은 점박이</dd>
+        <dt><canvas data-coat="frog" width="16" height="16"></canvas>개구리</dt><dd>agy. 기본 모델은 민무늬, 가벼운 모델은 점박이</dd>
+        <dt class="top">털 무늬</dt><dd>모델. 종은 하네스이고 털 무늬는 모델입니다. 모르는 모델은 회색입니다
+          <span class="coats"><span><canvas data-coat="tuxedo" width="16" height="16"></canvas>턱시도는 fable</span><span><canvas data-coat="calico" width="16" height="16"></canvas>삼색은 opus</span><span><canvas data-coat="tabby" width="16" height="16"></canvas>치즈 태비는 sonnet</span><span><canvas data-coat="white" width="16" height="16"></canvas>흰색은 haiku</span></span></dd>
+        <dt>동작</dt><dd>상태. 타자는 작업, 손들기는 결정 대기, 감은 눈은 휴식</dd>
+        <dt>상자</dt><dd>단위. 상자가 놓인 자리가 단계</dd>
+      </dl>
+      <h3>개입</h3>
+      <dl>
+        <dt>지반의 버튼</dt><dd>결정에 답하기, 단위 후 정지, 즉시 중단, 계속</dd>
+        <dt>캐릭터 누르기</dt><dd>지금 하는 일을 보고 메시지를 보냄</dd>
+        <dt>상자 누르기</dt><dd>단계와 가장 최근 증거를 봄</dd>
+        <dt>건물</dt><dd>층 하나가 프로젝트 하나. 층을 누르면 사무실로 들어감</dd>
+        <dt>목록</dt><dd>같은 정보를 글자로 봄</dd>
+      </dl>
+      <p class="note">움직임은 실제 이벤트가 있을 때만 생깁니다. 지시는 접수와 적용됨을 따로 표시합니다. 이 페이지는 설계 시안이고, 실제 앱은 Swift/AppKit으로 만듭니다.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+// 장면 그리기. fillRect 만 쓴다. 논리 해상도 240×108, 화면에서는 2배로 확대한다.
+(function (G) {
+const W = 240, H = 108;
+const PAL = {
+  day: { ink:'#232845', slab:'#232845', hatch:'#4a548c', wall:'#c8eee0', dot:'#b2e3d2', wall2:'#8fd6c2', base:'#5aa896',
+    floor:'#f4bd6c', plank:'#dd9c47', wood:'#cf7c3c', wood2:'#a35a26', back:'#f1d3a2', metal:'#a9bbd8', metal2:'#6f83a8', tower:'#39406b',
+    screen:'#232845', on:'#eafcff', code:'#2f8fe8', off:'#55608a', box:'#eab85f', box2:'#b9822f', boxD:'#93dba8', boxD2:'#3f9a5f',
+    door:'#e9a55c', door2:'#cf7c3c', sofa:'#5aa896', sofa2:'#3f8576', paper:'#fffdf4', pink:'#ff4f9a', red:'#ef4b4b', amber:'#ffc23d',
+    green:'#3fc46f', leaf:'#3fae6a', leaf2:'#2b8a52', pot:'#d9683a', sky:'#8fd0ff', cloud:'#ffffff', sun:'#ffd84d', star:'#8fd0ff', lampOn:'#ffe27a',
+    lampOff:'#e7a04a', cone:'rgba(255,226,122,0)', shadow:'rgba(35,40,69,.2)', grass:'#5fbf6b', dim:'rgba(35,40,69,.38)', white:'#ffffff', bldg:'#232845', card:'#fffdf4' },
+  night: { ink:'#141833', slab:'#141833', hatch:'#2a3266', wall:'#2f3b76', dot:'#384588', wall2:'#253066', base:'#1b2452',
+    floor:'#8a6248', plank:'#6f4a34', wood:'#a9683a', wood2:'#7a4424', back:'#5a4a68', metal:'#7f8fb8', metal2:'#4f5d86', tower:'#1d2248',
+    screen:'#141833', on:'#d9fbff', code:'#2f8fe8', off:'#3a446f', box:'#dfaa55', box2:'#9c6b22', boxD:'#84cf9a', boxD2:'#2f7f4c',
+    door:'#a9683a', door2:'#7a4424', sofa:'#3f8576', sofa2:'#2c6558', paper:'#fffdf4', pink:'#ff4f9a', red:'#ef4b4b', amber:'#ffc23d',
+    green:'#3fc46f', leaf:'#2f9358', leaf2:'#1f6d40', pot:'#b9552e', sky:'#141a3c', cloud:'#2a3266', sun:'#f4f1d0', star:'#f4f1d0', lampOn:'#ffe27a',
+    lampOff:'#6b5a3a', cone:'rgba(255,226,122,.12)', shadow:'rgba(0,0,0,.3)', grass:'#2f6a4a', dim:'rgba(8,10,28,.55)', white:'#ffffff', bldg:'#141833', card:'#aab3d6' }
+};
+// 머리 그림. o 외곽선, b 털, s 줄무늬와 점, a·k 얼룩, e 늘어진 귀, w 흰 털, p 귀 안쪽과 볼, n 코와 입
+const put = (rows, edits) => { const g = rows.map(r => [...r]); edits.forEach(e => { g[e[0]][e[1]] = e[2]; }); return g.map(r => r.join('')); };
+const CAT = ['oo........oo','obo......obo','obboooooobbo','obbbbbbbbbbo','obbbbbbbbbbo','obbbbbbbbbbo','obbbbbbbbbbo','obbbbbbbbbbo','obpbbwwbbpbo','.obbbwwbbbo.','..oooooooo..'];
+// 개: 귀가 얼굴 옆으로 늘어져 턱 아래까지 내려온다. 고양이의 세운 귀와 윤곽으로 갈린다.
+const DOG = ['..oooooooo..','.oebbbbbbeo.','oeebbbbbbeeo','oeebbbbbbeeo','oeebbbbbbeeo','oeebbbbbbeeo','oeebbbbbbeeo','oeebwwwwbeeo','oeeownnwoeeo','.oo.owwo.oo.','....oooo....'];
+// 개구리: 귀가 없고 눈이 머리 위로 튀어나온다. 입이 넓다. 눈은 튀어나온 칸 안에 그린다.
+const FROG = ['.ooo....ooo.','owwwo..owwwo','owwwoooowwwo','obbbbbbbbbbo','obbbbbbbbbbo','obnbbbbbbnbo','obbnnnnnnbbo','obbbbbbbbbbo','.obbbbbbbbo.','..oooooooo..'];
+const EARS = [[1,1,'p'],[1,10,'p']];
+// 털 무늬 하나가 캐릭터 그림 하나다. torso·arm·leg 는 몸의 색, eye 는 짙은 털 위에서 쓰는 눈 색, eyeRow·eyeX 는 눈의 자리.
+const COAT = {
+  tuxedo: { head: put(CAT, EARS.concat([[5,5,'w'],[5,6,'w'],[6,5,'w'],[6,6,'w'],[7,4,'w'],[7,5,'w'],[7,6,'w'],[7,7,'w'],[8,2,'b'],[8,9,'b'],[8,3,'w'],[8,4,'w'],[8,7,'w'],[8,8,'w'],[9,3,'w'],[9,4,'w'],[9,7,'w'],[9,8,'w']])),
+    col: { b:'#454a6e', w:'#ffffff', p:'#ff9db0' }, torso:'#ffffff', arm:'#ffffff', leg:'#ffffff', eye:'#ffe27a' },
+  calico: { head: put(CAT, [[1,1,'a'],[2,1,'a'],[2,2,'a'],[3,1,'a'],[3,2,'a'],[3,3,'a'],[3,4,'a'],[4,1,'a'],[4,2,'a'],[4,3,'a'],[5,1,'a'],[5,2,'a'],[1,10,'k'],[2,9,'k'],[2,10,'k'],[3,7,'k'],[3,8,'k'],[3,9,'k'],[3,10,'k'],[4,8,'k'],[4,9,'k'],[4,10,'k'],[5,9,'k'],[5,10,'k'],[6,10,'k']]),
+    col: { b:'#fffaf0', a:'#f79a3e', k:'#454a6e', w:'#ffffff', p:'#ff9db0' }, torso:'#fffaf0', arm:'#f79a3e', leg:'#454a6e' },
+  tabby: { head: put(CAT, EARS.concat([[3,3,'s'],[3,5,'s'],[3,6,'s'],[3,8,'s'],[4,5,'s'],[4,6,'s'],[6,1,'s'],[6,10,'s']])),
+    col: { b:'#f79a3e', s:'#c9661a', w:'#ffffff', p:'#ff9db0' }, torso:'#f79a3e', arm:'#f79a3e', leg:'#cf6f1c' },
+  white: { head: put(CAT, EARS), col: { b:'#ffffff', w:'#ffffff', p:'#ff9db0' }, torso:'#ffffff', arm:'#ffffff', leg:'#d9dbe6' },
+  catGray: { head: put(CAT, EARS), col: { b:'#9aa3bd', w:'#ffffff', p:'#ff9db0' }, torso:'#9aa3bd', arm:'#9aa3bd', leg:'#7a84a3' },
+  // 비글: 황갈색 얼굴에 흰 콧등 줄과 흰 주둥이, 짙은 갈색 귀. 점박이: 흰 바탕에 짙은 회색 귀, 왼쪽 눈을 덮는 회색 얼룩.
+  beagle: { head: put(DOG, [[1,5,'w'],[1,6,'w'],[2,5,'w'],[2,6,'w'],[3,5,'w'],[3,6,'w'],[4,5,'w'],[4,6,'w'],[5,5,'w'],[5,6,'w'],[6,5,'w'],[6,6,'w'],[6,4,'w'],[6,7,'w']]), col: { b:'#c08552', e:'#7a4a26', w:'#ffffff' }, torso:'#ffffff', arm:'#c08552', leg:'#ffffff', eyeRow:4, eyeX:[4, 7] },
+  dogSpot: { head: put(DOG, [[3,3,'s'],[3,4,'s'],[3,5,'s'],[4,3,'s'],[4,4,'s'],[4,5,'s'],[5,3,'s'],[5,4,'s'],[5,5,'s'],[6,3,'s'],[6,4,'s'],[6,5,'s']]), col: { b:'#ffffff', e:'#59618a', s:'#8089ad', w:'#ffffff' }, torso:'#ffffff', arm:'#ffffff', leg:'#d9dbe6', eyeRow:4, eyeX:[4, 7] },
+  // 개구리의 초록은 완료 초록(#3fc46f)과 겹치지 않게 짙은 청록으로 쓴다.
+  frog: { head: FROG, col: { b:'#1f8a7a', w:'#ffffff' }, torso:'#cdeee0', arm:'#1f8a7a', leg:'#176b60', eyeRow:1, eyeX:[2, 9] },
+  frogSpot: { head: put(FROG, [[3,4,'s'],[4,7,'s'],[4,8,'s'],[7,3,'s'],[7,7,'s'],[3,9,'s']]), col: { b:'#1f8a7a', s:'#0b3d36', w:'#ffffff' }, torso:'#cdeee0', arm:'#1f8a7a', leg:'#176b60', eyeRow:1, eyeX:[2, 9] }
+};
+// 종은 하네스, 털 무늬는 모델이다. 종이나 무늬를 바꿀 때는 이 표만 고친다.
+const HARNESS = {
+  'claude-code': { animal:'고양이', coats:{ fable:'tuxedo', opus:'calico', sonnet:'tabby', haiku:'white' }, other:'catGray' },
+  codex: { animal:'개', coats:{ '기본 모델':'beagle', '가벼운 모델':'dogSpot' }, other:'beagle' },
+  agy: { animal:'개구리', coats:{ '기본 모델':'frog', '가벼운 모델':'frogSpot' }, other:'frog' }
+};
+const coatOf = (harness, model) => { const h = HARNESS[harness]; return h ? h.coats[model] || h.other : 'catGray'; };
+// 상자 번호는 5×5 꽉 찬 숫자로 그린다. 주의 표시의 ?, ! 는 3×5.
+const DIGIT = { '0':['01110','10001','10001','10001','01110'], '1':['00100','01100','00100','00100','01110'], '2':['11110','00001','01110','10000','11111'], '3':['11110','00001','01110','00001','11110'],
+  '4':['10010','10010','11111','00010','00010'], '5':['11111','10000','11110','00001','11110'], '6':['01111','10000','11110','10001','01110'], '7':['11111','00001','00010','00100','00100'],
+  '8':['01110','10001','01110','10001','01110'], '9':['01110','10001','01111','00001','11110'] };
+const FONT = { '?':['110','001','010','000','010'], '!':['010','010','010','000','010'] };
+const DESKS = [80, 108, 136];
+const BELL_X = 130;
+const SPOT = { door:[16,84], backlog:[44,84], desk1:[80,84], desk2:[108,84], desk3:[136,84], test:[167,84], test2:[154,85], ui:[197,84], done:[224,84],
+  sofa:[21,98], sofa2:[33,98], bell:[122,100] };
+// 단계 이름표 자리(논리 좌표의 가운데 x)
+const RAIL = [['대기',44],['구현',108],['검증',165],['검수',197],['완료',223]];
+
+const R = (c, x, y, w, h, col) => { c.fillStyle = col; c.fillRect(Math.round(x), Math.round(y), w, h); };
+const B = (c, x, y, w, h, fill, ink) => { R(c, x, y, w, h, ink); R(c, x+1, y+1, w-2, h-2, fill); };
+function map(c, rows, x, y, col) {
+  for (let r = 0; r < rows.length; r++) { const row = rows[r]; let i = 0;
+    while (i < row.length) { const ch = row[i]; let j = i; while (j < row.length && row[j] === ch) j++;
+      if (ch !== '.' && col[ch]) R(c, x + i, y + r, j - i, 1, col[ch]); i = j; } }
+}
+// ponytail: 숫자 하나만 그린다. 단위가 10개를 넘으면 상자를 넓혀야 한다.
+function digit(c, id, x, y, col) { const g = DIGIT[String(id).replace(/\D/g, '').slice(-1)]; if (g) for (let r = 0; r < 5; r++) for (let k = 0; k < 5; k++) if (g[r][k] === '1') R(c, x + k, y + r, 1, 1, col); }
+function text(c, s, x, y, col) { for (const ch of s) { const g = FONT[ch]; if (g) for (let r = 0; r < 5; r++) for (let k = 0; k < 3; k++) if (g[r][k] === '1') R(c, x + k, y + r, 1, 1, col); x += 4; } }
+
+// 머리 위 작은 상태 표시. 주의 표시(ask, error)는 여기서 그리지 않는다. 위층(drawFx)에서 그린다.
+function glyph(c, P, kind, x, y, fr) {
+  if (kind === 'sleep') { const o = fr ? 1 : 0; R(c, x+2, y+3-o, 4, 1, P.paper); R(c, x+4, y+4-o, 1, 1, P.paper); R(c, x+3, y+5-o, 1, 1, P.paper); R(c, x+2, y+6-o, 4, 1, P.paper);
+    R(c, x+7, y-o, 3, 1, P.paper); R(c, x+8, y+1-o, 1, 1, P.paper); R(c, x+7, y+2-o, 3, 1, P.paper); return; }
+  B(c, x, y, 9, 8, P.paper, P.ink); R(c, x+3, y+8, 2, 1, P.ink); R(c, x+3, y+7, 1, 1, P.paper);
+  if (kind === 'think') { for (let i = 0; i < 3; i++) R(c, x+2+i*2, y+4 - ((fr + i) % 2 ? 0 : 1), 1, 1, P.ink); }
+  else if (kind === 'stop') { R(c, x+3, y+2, 1, 4, P.ink); R(c, x+5, y+2, 1, 4, P.ink); }
+  else if (kind === 'done') { R(c, x+2, y+4, 1, 1, P.boxD2); R(c, x+3, y+5, 1, 1, P.boxD2); R(c, x+4, y+4, 1, 1, P.boxD2); R(c, x+5, y+3, 1, 1, P.boxD2); R(c, x+6, y+2, 1, 1, P.boxD2); }
+}
+function box(c, P, x, y, u) {
+  const d = u.phase === 'done';
+  B(c, x, y-1, 11, 9, d ? P.boxD : P.box, P.ink); R(c, x+1, y+6, 9, 1, d ? P.boxD2 : P.box2);
+  digit(c, u.id, x + 3, y + 1, P.ink);   // 숫자만 그린다. 외곽선과 위 1px, 좌우 2px 을 띄운다
+  u.hx = x; u.hy = y;
+}
+// a: {x,y,coat,state,moving,carry}. 발 가운데가 (x,y)다. opt.bare 면 머리 위 표시와 그림자를 뺀다.
+function sprite(c, P, a, fr, opt) {
+  const bare = opt && opt.bare, s = COAT[a.coat] || COAT.catGray, hd = s.head, x = Math.round(a.x) - 6, st = a.state;
+  const bob = st === 'work' && fr ? 1 : 0, sit = st === 'sleep' ? 2 : 0;
+  const feet = Math.round(a.y), tt = feet - 5 + sit, ht = tt - hd.length + bob;
+  if (!sit && !bare) R(c, x+1, feet, 10, 1, P.shadow);
+  const col = Object.assign({ o:P.ink, n:P.ink }, s.col), eye = s.eye || P.ink;
+  if (!sit) { const l = a.moving && fr === 0 ? 1 : 0, r = a.moving && fr === 1 ? 1 : 0;
+    B(c, x+2, feet-3-l, 4, 3, s.leg, P.ink); B(c, x+6, feet-3-r, 4, 3, s.leg, P.ink); }
+  B(c, x+2, tt, 8, 4, s.torso, P.ink);
+  const arm = (side, top, len) => B(c, side ? x+9 : x, top, 3, len + 1, s.arm, P.ink);
+  if (a.carry) { arm(0, tt-3, 5); arm(1, tt-3, 5); }
+  else if (st === 'ask' || st === 'error') arm(1, tt, 3);   // 손든 왼팔은 머리를 그린 뒤에 그린다
+  else if (st === 'work') { arm(0, tt + (fr ? 0 : 1), 2); arm(1, tt + (fr ? 1 : 0), 2); }
+  else { arm(0, tt, 3); arm(1, tt, 3); }
+  map(c, hd, x, ht, col);
+  // 손든 팔: 벨의 반대쪽(왼쪽) 볼 옆에 짧은 앞발을 올린다. 머리 앞에 겹쳐 그린다. 2프레임으로 흔든다.
+  if (!a.carry && (st === 'ask' || st === 'error')) { const up = fr ? 5 : 4; B(c, x-2, tt-up, 4, up+3, s.arm, P.ink); }
+  const er = ht + (s.eyeRow === undefined ? hd.length - 5 : s.eyeRow), eL = x + (s.eyeX ? s.eyeX[0] : 3), eR = x + (s.eyeX ? s.eyeX[1] : 8);
+  if (st === 'sleep' || st === 'stopped') { R(c, eL-1, er+1, 2, 1, eye); R(c, eR, er+1, 2, 1, eye); }
+  else if (st === 'done') { R(c, eL-1, er+1, 1, 1, eye); R(c, eL, er, 1, 1, eye); R(c, eL+1, er+1, 1, 1, eye); R(c, eR-1, er+1, 1, 1, eye); R(c, eR, er, 1, 1, eye); R(c, eR+1, er+1, 1, 1, eye); }
+  else if (st === 'error') { R(c, eL-1, er, 1, 1, eye); R(c, eL, er+1, 1, 1, eye); R(c, eL-1, er+2, 1, 1, eye); R(c, eR+1, er, 1, 1, eye); R(c, eR, er+1, 1, 1, eye); R(c, eR+1, er+2, 1, 1, eye); }
+  else { R(c, eL, er, 1, 2, eye); R(c, eR, er, 1, 2, eye); }
+  a.bx = x; a.by = ht; a.bh = feet - ht + 1; a.top = ht - 10;
+  if (a.carry) { box(c, P, x, ht - 9, a.carry); a.by = ht - 10; a.bh = feet - ht + 11; }
+  else if (!bare) { const k = { sleep:'sleep', think:'think', stopped:'stop', done:'done' }[st]; if (k) glyph(c, P, k, x + (k === 'sleep' ? 6 : 2), ht - 10, fr); }
+}
+function shelf(c, P, x, done) {
+  B(c, x, 40, 26, 32, P.wood2, P.ink); R(c, x+1, 41, 24, 30, P.back); R(c, x+1, 55, 24, 2, P.wood); R(c, x+1, 56, 24, 1, P.wood2);
+  if (done) { R(c, x+11, 34, 1, 6, P.ink); B(c, x+12, 33, 8, 6, P.green, P.ink); }
+}
+function room(c, P, night) {
+  R(c, 0, 0, W, H, P.wall);
+  for (let y = 8; y < 48; y += 8) for (let x = (y % 16 ? 10 : 4); x < W; x += 12) R(c, x, y, 1, 1, P.dot);
+  R(c, 0, 50, W, 20, P.wall2); for (let x = 5; x < W; x += 10) R(c, x, 52, 1, 16, P.wall);
+  R(c, 0, 70, W, 2, P.base); R(c, 0, 72, W, 32, P.floor);
+  for (let y = 80; y < 104; y += 8) { R(c, 0, y, W, 1, P.plank); for (let x = (y % 16 ? 14 : 44); x < W; x += 60) R(c, x, y - 8, 1, 8, P.plank); }
+  R(c, 0, 0, W, 3, P.slab); R(c, 0, 104, W, 4, P.slab); R(c, 0, 0, 3, H, P.slab); R(c, 237, 0, 3, H, P.slab);
+  for (let x = 6; x < W - 6; x += 7) { R(c, x, 105, 2, 1, P.hatch); R(c, x+1, 106, 2, 1, P.hatch); R(c, x, 1, 2, 1, P.hatch); }
+  // 창(낮에는 해, 밤에는 달과 별), 시계, 액자(생선)
+  B(c, 57, 7, 26, 17, P.sky, P.ink); R(c, 69, 8, 1, 15, P.ink); R(c, 58, 15, 24, 1, P.ink); R(c, 55, 24, 30, 2, P.ink);
+  if (night) { R(c, 74, 10, 4, 4, P.sun); R(c, 76, 10, 2, 2, P.sky); R(c, 61, 11, 1, 1, P.star); R(c, 65, 19, 1, 1, P.star); R(c, 78, 20, 1, 1, P.star); }
+  else { R(c, 61, 10, 4, 4, P.sun); R(c, 73, 18, 6, 2, P.cloud); R(c, 75, 17, 3, 1, P.cloud); }
+  B(c, 150, 8, 11, 11, P.card, P.ink); R(c, 155, 10, 1, 4, P.ink); R(c, 155, 13, 3, 1, P.ink);
+  B(c, 178, 9, 15, 10, P.card, P.ink); R(c, 182, 12, 6, 4, P.code); R(c, 188, 11, 2, 1, P.code); R(c, 188, 16, 2, 1, P.code); R(c, 189, 12, 1, 4, P.code); R(c, 183, 13, 1, 1, P.ink);
+}
+// st: {fr, night, doorOpen, actors, units, lamp, stopSign}
+function drawOffice(c, st, P) {
+  const fr = st.fr | 0;
+  room(c, P, st.night);
+  B(c, 8, 36, 16, 36, st.doorOpen ? P.ink : P.door, P.ink);
+  if (st.doorOpen) R(c, 9, 37, 4, 34, P.door2);
+  else { R(c, 9, 68, 14, 3, P.door2); B(c, 12, 41, 8, 8, P.sky, P.ink); R(c, 20, 56, 2, 2, P.amber); }
+  shelf(c, P, 31, false); shelf(c, P, 211, true);
+  DESKS.forEach(dx => {
+    const on = st.actors.some(a => a.state === 'work' && Math.abs(a.x - dx) < 2 && Math.abs(a.y - 84) < 1);
+    R(c, dx, 3, 1, 7, P.ink); B(c, dx-3, 10, 7, 4, on ? P.lampOn : P.lampOff, P.ink);
+    if (on) for (let i = 0; i < 6; i++) R(c, dx-4-i*2, 14+i*8, 9+i*4, 8, P.cone);
+    R(c, dx-11, 62, 2, 10, P.ink); R(c, dx+9, 62, 2, 10, P.ink); B(c, dx-12, 59, 24, 4, P.wood, P.ink); B(c, dx-12, 62, 9, 6, P.wood2, P.ink);
+    R(c, dx-6, 56, 2, 3, P.ink); B(c, dx-10, 46, 11, 10, on ? P.on : P.off, P.screen);
+    if (on) { R(c, dx-8, 48+fr, 5, 1, P.code); R(c, dx-8, 51-fr, 3, 1, P.code); R(c, dx-8, 53, 6, 1, P.off); }
+  });
+  // 시험대와 3색 신호등
+  R(c, 155, 62, 2, 10, P.ink); R(c, 177, 62, 2, 10, P.ink); B(c, 154, 59, 26, 4, P.metal, P.ink); R(c, 155, 61, 24, 1, P.metal2);
+  B(c, 171, 35, 8, 24, P.tower, P.ink);
+  const lit = { run:[0, fr ? 1 : 0, 0], ok:[0, 0, 1], fail:[1, 0, 0] }[st.lamp] || [0, 0, 0];
+  [P.red, P.amber, P.green].forEach((col, i) => R(c, 173, 38 + i * 7, 4, 4, lit[i] ? col : P.off));
+  // 검수 화면
+  B(c, 186, 38, 23, 17, P.off, P.screen); R(c, 196, 55, 3, 3, P.ink); R(c, 192, 58, 11, 1, P.ink);
+  if (st.units.some(u => u.place === 'ui')) { R(c, 187, 39, 21, 15, P.on); R(c, 188, 40, 19, 2, P.code); R(c, 188, 44, 8, 9, P.amber); R(c, 198, 44, 9, 4, P.boxD); R(c, 198, 50, 9, 3, P.metal); }
+  R(c, 191, 62, 2, 10, P.ink); R(c, 202, 62, 2, 10, P.ink); B(c, 189, 59, 16, 4, P.wood, P.ink);
+  // 화분
+  B(c, 223, 94, 9, 9, P.pot, P.ink); R(c, 225, 86, 5, 8, P.leaf); R(c, 222, 89, 4, 4, P.leaf); R(c, 229, 88, 4, 5, P.leaf2); R(c, 227, 83, 2, 4, P.leaf2);
+  st.units.forEach(u => { const p = boxPos(u); if (p) box(c, P, p[0], p[1], u); });
+  if (st.stopSign) { R(c, 28, 62, 1, 10, P.ink); B(c, 25, 55, 7, 7, P.red, P.ink); R(c, 26, 58, 5, 1, P.white); }
+  const items = st.actors.map(a => ({ y:a.y, f:() => sprite(c, P, a, fr) }));
+  items.push({ y:90, f:() => { B(c, 9, 84, 36, 10, P.sofa2, P.ink); B(c, 9, 92, 36, 9, P.sofa, P.ink); B(c, 6, 88, 6, 14, P.sofa2, P.ink); B(c, 42, 88, 6, 14, P.sofa2, P.ink); R(c, 10, 101, 2, 2, P.ink); R(c, 42, 101, 2, 2, P.ink); } });
+  items.push({ y:103, f:() => bell(c, P, BELL_X, P.amber, 0) });
+  items.sort((a, b) => a.y - b.y).forEach(i => i.f());
+}
+function bell(c, P, x, col, ring) {
+  B(c, x, 95, 14, 9, P.wood, P.ink); R(c, x+1, 101, 12, 2, P.wood2);
+  B(c, x+3+ring, 88, 8, 7, col, P.ink); R(c, x+6+ring, 86, 2, 2, P.ink); R(c, x+2, 94, 10, 1, P.ink);
+}
+// 주의 표시 층. 장면 그림과 따로 그린다. 분홍은 여기에서만 쓴다.
+function drawFx(c, st, P) {
+  const fr = st.fr | 0;
+  if (st.view === 'building') {
+    st.floors.forEach((f, i) => { if (!f.alert) return; const y = FLOOR_Y + i * FLOOR_H;
+      const up = fr ? 1 : 0;   // 깜박임 대신 1픽셀 들썩인다. 프레임이 멈춰도 분홍이 남는다
+      R(c, 220, y + 8, 4, 2, P.ink); B(c, 224, y + 2 - up, 11, 13, P.pink, P.ink); text(c, f.alert === 'error' ? '!' : '?', 228, y + 6 - up, P.ink); });
+    return;
+  }
+  if (st.decision) { const ring = fr ? 1 : 0; B(c, BELL_X+3+ring, 88, 8, 7, P.pink, P.ink); R(c, BELL_X+6+ring, 86, 2, 2, P.ink);
+    if (fr) { R(c, BELL_X-1, 87, 1, 3, P.pink); R(c, BELL_X+14, 87, 1, 3, P.pink); R(c, BELL_X-3, 85, 1, 2, P.pink); R(c, BELL_X+16, 85, 1, 2, P.pink); } }
+  // 단위 막힘: 상자에 느낌표
+  st.units.forEach(u => { if (!u.blocked || u.place === 'carry' || u.hx === undefined) return; const x = u.hx + 7, y = u.hy - 7 - (fr ? 1 : 0);
+    B(c, x, y, 7, 9, P.pink, P.ink); text(c, '!', x + 2, y + 2, P.ink); });
+  st.actors.forEach(a => { if ((a.state !== 'ask' && a.state !== 'error') || a.carry || a.top === undefined) return;
+    const x = a.bx + 1, y = a.top - (fr ? 1 : 0);
+    B(c, x, y, 11, 9, P.pink, P.ink); R(c, x+4, y+9, 2, 1, P.ink); R(c, x+4, y+8, 1, 1, P.pink); text(c, a.state === 'ask' ? '?' : '!', x + 4, y + 2, P.ink); });
+}
+function boxPos(u) {
+  if (u.place === 'backlog') return [32 + (u.slot % 2) * 12, 47 + Math.floor(u.slot / 2) * 16];
+  if (u.place === 'done') return [212 + (u.slot % 2) * 12, 63 - Math.floor(u.slot / 2) * 16];
+  if (u.place === 'desk1') return [DESKS[0] + 1, 51];
+  if (u.place === 'desk2') return [DESKS[1] + 1, 51];
+  if (u.place === 'desk3') return [DESKS[2] + 1, 51];
+  if (u.place === 'test') return [157, 51];
+  if (u.place === 'ui') return [192, 51];
+  return null;
+}
+// 건물 단면도. floors: [{wall, agents:[{coat,state}], done, total, alert}]
+const FLOOR_H = 23, FLOOR_Y = 10;
+function drawBuilding(c, st, P) {
+  const fr = st.fr | 0;
+  R(c, 0, 0, W, H, P.sky);
+  if (st.night) { R(c, 5, 14, 5, 5, P.sun); R(c, 7, 14, 3, 3, P.sky); [[11,36],[4,58],[9,82],[229,40],[233,90]].forEach(p => R(c, p[0], p[1], 1, 1, P.star)); }
+  else { R(c, 5, 14, 6, 6, P.sun); R(c, 2, 44, 10, 2, P.cloud); R(c, 4, 42, 5, 2, P.cloud); R(c, 228, 60, 9, 2, P.cloud); }
+  R(c, 0, 102, W, 6, P.grass); R(c, 0, 102, W, 1, P.ink);
+  R(c, 14, 4, 208, 4, P.bldg); R(c, 18, 8, 200, 94, P.bldg);
+  for (let x = 18; x < 218; x += 7) R(c, x, 5, 2, 1, P.hatch);
+  st.floors.forEach((f, i) => {
+    const y = FLOOR_Y + i * FLOOR_H, n = f.agents.length;
+    R(c, 20, y, 196, 21, f.wall);
+    for (let x = 94; x < 212; x += 10) R(c, x, y + 14, 1, 7, 'rgba(35,40,69,.08)');
+    B(c, 22, y + 2, 62, 11, P.card, P.ink);
+    for (let k = 0; k < f.total; k++) { const dn = k < f.done;   // 사무실의 상자와 같은 그림: 호박색은 대기·진행, 초록은 완료
+      B(c, 23 + k * 6, y + 15, 5, 5, dn ? P.boxD : P.box, P.ink); R(c, 24 + k * 6, y + 18, 3, 1, dn ? P.boxD2 : P.box2); }
+    if (!n || (st.night && f.agents.every(a => a.state === 'sleep'))) R(c, 20, y, 196, 21, P.dim);
+    f.agents.forEach((a, k) => sprite(c, P, Object.assign({ x:104 + k * 22, y:y + 20 }, a), fr, { bare:true }));
+  });
+}
+// 지반 왼쪽의 동그란 종이 칸에 넣는 작은 그림(16×16). kind: face, bell, stop, box, building
+function icon(c, P, kind, a) {
+  if (kind === 'face') sprite(c, P, Object.assign({}, a, { x:8, y:21, state: a.state === 'sleep' ? 'stopped' : a.state === 'work' ? 'idle' : a.state, moving:false, carry:null }), 0, { bare:true });
+  else if (kind === 'bell') { B(c, 3, 4, 10, 8, P.amber, P.ink); R(c, 7, 2, 2, 2, P.ink); R(c, 2, 11, 12, 1, P.ink); R(c, 7, 12, 2, 2, P.ink); }
+  else if (kind === 'stop') { R(c, 7, 11, 2, 4, P.ink); B(c, 2, 1, 12, 11, P.red, P.ink); R(c, 4, 6, 8, 1, P.white); }
+  else if (kind === 'box') { const d = a && a.phase === 'done'; B(c, 2, 3, 12, 10, d ? P.boxD : P.box, P.ink); R(c, 3, 11, 10, 1, d ? P.boxD2 : P.box2); if (a) digit(c, a.id, 6, 5, P.ink); }
+  else if (kind === 'building') { B(c, 3, 1, 10, 14, P.wall2, P.ink); for (let y = 3; y < 11; y += 4) { R(c, 5, y, 2, 2, P.ink); R(c, 9, y, 2, 2, P.ink); } R(c, 7, 11, 2, 3, P.ink); }
+}
+G.MM = { W, H, PAL, COAT, HARNESS, coatOf, SPOT, DESKS, RAIL, FLOOR_H, FLOOR_Y, BELL_X, sprite, box, boxPos, drawOffice, drawBuilding, drawFx, icon };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+// 시안의 상태, 예시 시나리오, 화면 갱신. 화면의 값은 모두 예시 데이터다.
+(() => {
+if (!document.documentElement.lang) document.documentElement.lang = 'ko';
+const MM = window.MM, W = MM.W, H = MM.H, SPOT = MM.SPOT;
+const $ = id => document.getElementById(id);
+const cv = $('cv'), fxc = $('fx'), g = cv.getContext('2d'), gf = fxc.getContext('2d');
+const ground = $('ground'), list = $('list'), hits = $('hits'), bubs = $('bubs'), rail = $('rail');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const PHASE = { queued:'대기', build:'구현', verify:'검증', review:'검수', done:'완료' };   // 기계 값은 phase 필드에 담는다
+const STATE = { work:'작업 중', think:'확인 중', go:'이동 중', idle:'쉬는 중', sleep:'쉬는 중', ask:'결정 대기', stopped:'사용자 정지', error:'환경·한도', done:'완료' };
+const EV = { cmd:'검사 명령', manual:'실제 확인', 'fail-first':'실패 먼저', review:'독립 검수', mutation:'변형 점검', 'cross-review':'교차 검토', coverage:'커버리지', 'ui-review':'UI 검수' };
+const NUM = ['', '하나', '둘', '셋', '넷', '다섯'];
+const el = (t, cls, text) => { const e = document.createElement(t); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+
+// ---------- 상태 ----------
+let view = 'office', back = 'office', timeMode = 'auto', fr = 0, frT = 0, clock = 0, dirty = true;
+let frozen = false, stopReq = null, intReq = null, stopApplied = false, lamp = 'off', decision = null, blocked = null;
+let units = [], actors = [], worker = null, tasks = [], sel = null, msgOpen = false, confirmInt = false, floorSel = null, wantFocus = null, elseAlert = false;
+const dirs = [];
+const person = (id, name, harness, model, effort) => ({ id, name, harness, model, effort, coat:MM.coatOf(harness, model) });
+const main = person('main', '계획자', 'claude-code', 'fable', 'high');
+const rev = person('rev', '검수자', 'codex', '기본 모델', 'high');
+const mkWorker = () => person('worker', '일꾼', 'claude-code', 'sonnet', 'low');
+const WALLS = { day:['#c8eee0', '#ffd9c2', '#d9d2ff', '#fff0b8'], night:['#2f3b76', '#5a3f55', '#3d3a78', '#5a5236'] };
+// agents 는 [털 무늬, 상태]. trouble 은 "다른 층 알림"을 켰을 때 덮어쓰는 값이다.
+const FLOORS = [
+  { name:'mmCode', live:true },
+  { name:'웹 프런트', agents:[['tabby','work'], ['calico','work'], ['dogSpot','sleep']], done:4, total:7, text:'둘이 일하고 하나는 쉽니다', why:'없음' },
+  { name:'모바일 앱', agents:[['white','work']], done:1, total:3, text:'하나가 일하는 중입니다', why:'없음',
+    trouble:{ agents:[['white','error']], alert:'error', text:'한도 초과로 일꾼이 멈췄습니다', why:'환경·한도' } },
+  { name:'문서 사이트', agents:[['frog','done'], ['frogSpot','sleep']], done:6, total:6, text:'모든 단위가 완료입니다', why:'없음' }
+];
+const fl = f => f.trouble && elseAlert ? Object.assign({}, f, f.trouble) : f;
+const unit = id => units.find(u => u.id === id);
+const night = () => timeMode === 'night' || (timeMode === 'auto' && (h => h < 7 || h >= 18)(new Date().getHours()));
+const pal = () => MM.PAL[night() ? 'night' : 'day'];
+const stamp = () => { const s = Math.floor(clock); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+function say(a, text) { a.say = text; a.sayT = text ? 3.2 : 0; a.sayAt = clock; if (text) { a.log.unshift(stamp() + ' ' + text); a.log.length = Math.min(a.log.length, 5); } dirty = true; }
+function place(a, spot, state) { Object.assign(a, { x:SPOT[spot][0], y:SPOT[spot][1], state, say:'', sayT:0, q:[], log:[], carry:null, moving:false, keep:null, dir:null }); }
+function proof(u, kind, result) { u.ev[kind] = result; u.last = [kind, result]; }
+
+// ---------- 행동 대기열 ----------
+const walk = spot => ({ k:'route', spot });
+const set = (state, text) => ({ k:'set', state, text });
+const wait = t => ({ k:'wait', t });
+const run = fn => ({ k:'run', fn });
+const act = (a, ...steps) => a.q.push(...steps);
+// 뒷줄의 캐릭터를 지나칠 때 겹치지 않게 앞쪽 통로(y=91)로 걷는다. 소파 뒤(x<54)는 통로가 없다.
+function route(a, t) {
+  if (Math.abs(a.x - t[0]) < 20 || (a.x < 54 && t[0] < 54)) return [t];
+  const entry = p => p[0] >= 54 ? [p[0], 91] : [54, p[1] <= 86 ? 86 : 91];
+  return [entry([a.x, a.y]), entry(t), t];
+}
+function stepActor(a, dt) {
+  a.moving = false;
+  if (a.sayT > 0) { a.sayT -= dt; if (a.sayT <= 0) dirty = true; }
+  if (frozen) return;
+  let s = a.q[0]; if (!s) return;
+  if (s.k === 'route') { a.q.splice(0, 1, ...route(a, SPOT[s.spot]).map(p => ({ k:'walk', x:p[0], y:p[1] }))); s = a.q[0]; }
+  if (s.k === 'walk') { const dx = s.x - a.x, dy = s.y - a.y, d = Math.hypot(dx, dy), v = 30 * dt;
+    if (reduce || d <= v) { a.x = s.x; a.y = s.y; a.q.shift(); } else { a.x += dx / d * v; a.y += dy / d * v; a.moving = true; } }
+  else if (s.k === 'set') { a.state = s.state; if (s.text !== undefined) say(a, s.text); a.q.shift(); dirty = true; }
+  else if (s.k === 'wait') { s.t -= dt; if (s.t <= 0) a.q.shift(); }
+  else { a.q.shift(); s.fn(); dirty = true; }
+}
+
+// ---------- 예시 시나리오 ----------
+function reset() {
+  const mk = (id, title, phase, plc, slot, ev, last) => ({ id, title, phase, place:plc, slot, ev:ev || {}, last:last || null, blocked:false });
+  const keepUnit = sel && sel.kind === 'unit' ? sel.ref.id : null;
+  units = [
+    mk('U1', 'hc 환경 전환', 'done', 'done', 0, { cmd:'통과 9/9', 'fail-first':'기록됨', mutation:'1회 통과', review:'통과' }, ['review', '통과']),
+    mk('U2', '이벤트 파일과 훅', 'done', 'done', 1, { cmd:'통과 14/14', 'fail-first':'기록됨', review:'통과', 'cross-review':'지적 0건', coverage:'82%' }, ['review', '통과']),
+    mk('U3', '모니터 조회판', 'build', 'desk1', 0),
+    mk('U4', '클릭 개입', 'queued', 'backlog', 0), mk('U5', '완료 기준 연결', 'queued', 'backlog', 1), mk('U6', '알림 연결', 'queued', 'backlog', 2)
+  ];
+  if (keepUnit) sel.ref = unit(keepUnit);
+  if (sel && sel.kind === 'actor' && sel.ref === worker) sel = null;
+  place(main, 'desk1', 'work'); place(rev, 'sofa', 'sleep');
+  worker = null; actors = [main, rev]; lamp = 'off'; decision = null; blocked = null; stopApplied = false; frozen = false; tasks = [];
+  if (stopReq && stopReq.status === '적용됨') stopReq = null;
+  say(main, 'Write U3 브리프');
+  act(main, wait(4), run(phase1));
+  dirty = true;
+}
+function phase1() {
+  worker = mkWorker(); place(worker, 'door', 'go'); actors.push(worker); say(worker, '입장');
+  main.state = 'think'; say(main, 'Agent 일꾼에게 U3 위임');
+  act(worker, walk('desk2'), run(() => { unit('U3').place = 'desk2'; }), set('work', 'Edit status.sh'), wait(6), run(phase2));
+  act(main, wait(3), set('think', 'Read 진행 기록'));
+}
+function runCheck(u) {   // 일꾼이 시험대에서 검사 명령을 돌린다
+  act(worker, run(() => { lamp = 'run'; }), set('work', 'Bash 검사 명령'), wait(4),
+    run(() => { lamp = 'ok'; proof(u, 'cmd', '통과 12/12'); }), set('idle', '검사 명령 통과 12/12'), wait(2), run(phase3));
+}
+function phase2() {
+  const u = unit('U3');
+  act(worker, run(() => { u.place = 'carry'; worker.carry = u; }), set('go', 'U3을 시험대로'), walk('test'),
+    run(() => { worker.carry = null; u.place = 'test'; u.phase = 'verify'; runCheck(u); }));
+}
+function phase3() {
+  const u = unit('U3');
+  if (worker) act(worker, set('go', ''), walk('desk2'), set('idle', ''));
+  act(rev, set('go', '독립 검수 시작'), walk('test2'), run(() => { u.place = 'carry'; rev.carry = u; lamp = 'off'; }), walk('ui'),
+    run(() => { rev.carry = null; u.place = 'ui'; u.phase = 'review'; }), set('work', 'Read 화면 캡처'), wait(6),
+    run(() => { proof(u, 'ui-review', '통과'); proof(u, 'review', '필수 수정 0, 개선 1'); }), set('idle', '필수 수정 0, 개선 1'), wait(2.5), run(phase4));
+}
+function phase4() {
+  const u = unit('U3');
+  act(rev, run(() => { u.place = 'carry'; rev.carry = u; }), set('go', 'U3을 완료 선반으로'), walk('done'),
+    run(() => { rev.carry = null; u.place = 'done'; u.phase = 'done'; u.slot = 2; act(main, wait(1.5), run(phase5)); }),
+    set('go', ''), walk('sofa'), set('sleep', ''));
+  if (worker) { const w = worker; act(w, set('go', '퇴장'), walk('door'), run(() => {
+    actors = actors.filter(a => a !== w); if (sel && sel.ref === w) { sel = null; msgOpen = false; } if (worker === w) worker = null; })); }
+}
+function phase5() {
+  if (stopReq) { stopReq.status = '적용됨'; stopApplied = true; main.state = 'stopped'; say(main, '사용자 정지'); return; }   // 단위 경계에서 정지를 적용한다
+  act(main, set('go', '결정을 요청하러 이동'), walk('bell'), set('ask', '정본을 옮길지 묻는 중'), run(() => {
+    decision = ASK(); }));
+}
+function answer(text) {
+  if (!decision) return;
+  decision = null; main.log.unshift(stamp() + ' 받은 답: ' + text);
+  const u = unit('U4');
+  act(main, set('go', '받은 답: ' + text), walk('backlog'), run(() => { u.place = 'carry'; main.carry = u; u.phase = 'build'; unit('U5').slot = 0; unit('U6').slot = 1; }),
+    walk('desk1'), run(() => { main.carry = null; u.place = 'desk1'; }), set('work', 'Write U4 브리프'), wait(6),
+    set('work', '시안이 처음으로 돌아갑니다'), wait(2), run(reset));
+  dirty = true;
+}
+function finishU3() { const u = unit('U3'); Object.assign(u, { place:'done', phase:'done', slot:2 }); proof(u, 'cmd', '통과 12/12'); proof(u, 'ui-review', '통과'); proof(u, 'review', '필수 수정 0, 개선 1'); main.q = []; }
+function ASK() { return { q:'정본을 이벤트 파일로 옮길까요?', yes:'옮긴다', no:'그대로 둔다', blocks:['U4', 'U5'] }; }
+function jump(name) {
+  sel = null; msgOpen = false; confirmInt = false; floorSel = null; stopReq = null; intReq = null; reset();
+  if (name === 'quiet' || name === 'blocked') { main.q = []; phase1(); Object.assign(worker, { x:SPOT.desk2[0], y:SPOT.desk2[1], q:[] }); unit('U3').place = 'desk2'; }
+  if (name === 'quiet') act(worker, set('work', 'Edit status.sh'), wait(6), run(phase2));
+  else if (name === 'blocked') { const u = unit('U3'); Object.assign(worker, { x:SPOT.test[0], y:SPOT.test[1], state:'idle' }); Object.assign(u, { place:'test', phase:'verify', blocked:true });
+    lamp = 'fail'; proof(u, 'cmd', '실패 3/12'); blocked = u; say(worker, '검사 명령 실패 3/12'); }
+  else if (name === 'decision') { finishU3(); place(main, 'bell', 'ask'); say(main, '정본을 옮길지 묻는 중'); decision = ASK(); }
+  else if (name === 'stopped') { finishU3(); stopReq = { kind:'단위 후 정지', text:'이 단위를 마치면 멈춤', status:'적용됨' }; dirs.unshift(stopReq); stopApplied = true; main.state = 'stopped'; say(main, '사용자 정지'); }
+  dirty = true;
+}
+
+// ---------- 개입 ----------
+function askStop() { if (stopReq) return; stopReq = { kind:'단위 후 정지', text:'이 단위를 마치면 멈춤', status:'접수' }; dirs.unshift(stopReq); dirty = true; }
+function interrupt() { confirmInt = false; const d = { kind:'즉시 중단', text:'지금 모두 멈춤', status:'접수' }; dirs.unshift(d); intReq = d;   // 적용 전에도 접수를 바로 보여 준다
+  tasks.push({ t:0.6, always:true, fn:() => { frozen = true; intReq = null; d.status = '적용됨'; actors.forEach(a => { a.keep = [a.state, a.say]; a.state = 'stopped'; a.say = '즉시 중단'; a.sayT = 3.2; }); } }); dirty = true; }
+function resume() {
+  if (frozen) { frozen = false; actors.forEach(a => { if (a.keep) { a.state = a.keep[0]; a.say = a.keep[1]; a.keep = null; } }); dirs.unshift({ kind:'계속', text:'즉시 중단을 풂', status:'적용됨' }); }
+  else if (stopApplied) { stopApplied = false; stopReq = null; dirs.unshift({ kind:'계속', text:'단위 후 정지를 풂', status:'적용됨' }); phase5(); }
+  dirty = true;
+}
+function sendMsg(a, v) {
+  const d = { kind:'메시지', text:a.name + '에게: ' + v, status:'접수' }; dirs.unshift(d); a.dir = d; msgOpen = false;
+  tasks.push({ t:1.4, fn:() => { d.status = '적용됨'; say(a, '받은 지시: ' + v);
+    if (blocked && a === worker) { const u = blocked; blocked = null; u.blocked = false; runCheck(u); } } }); dirty = true;   // 막힌 단위는 지시를 받고 검사 명령을 다시 돌린다
+}
+function select(s) { sel = s; msgOpen = false; confirmInt = false; dirty = true; }
+function setView(v) { if (v !== 'list') back = v; view = v; sel = null; msgOpen = false; confirmInt = false; floorSel = null; buildRail(); dirty = true; }
+
+// ---------- 문구 ----------
+const busy = a => ['work', 'think', 'go'].includes(a.state);
+function calm(list) { const w = list.filter(busy).length, r = list.length - w;
+  if (!w) return '모두 쉬고 있습니다';
+  if (!r) return NUM[w] + (w === 1 ? '가' : '이') + ' 일하는 중입니다';
+  return NUM[w] + (w === 1 ? '가' : '이') + ' 일하고 ' + NUM[r] + (r === 1 ? '는' : '은') + ' 쉽니다'; }
+const stateOf = a => frozen ? '사용자 정지' : STATE[a.state];
+const doneCount = () => units.filter(u => u.phase === 'done').length;
+function whyStopped(u) {   // 멈춤 분류는 단계와 따로 적는다
+  if (u.phase === 'done') return '없음';
+  if (u.blocked) return '단위 막힘';
+  if (frozen || stopApplied) return '사용자 정지';
+  if (decision && decision.blocks.includes(u.id)) return '결정 대기';
+  return '없음';
+}
+const floorWhy = () => decision ? '결정 대기' : blocked ? '단위 막힘' : frozen || stopApplied ? '사용자 정지' : '없음';
+function floorData() {
+  const walls = WALLS[night() ? 'night' : 'day'];
+  return FLOORS.map((f, i) => f.live
+    ? { wall:walls[i], agents:actors.slice(0, 5).map(a => ({ coat:a.coat, state:a.state === 'go' ? 'idle' : a.state })), done:doneCount(), total:units.length, alert:decision ? 'ask' : blocked ? 'error' : null }
+    : (t => ({ wall:walls[i], agents:t.agents.map(a => ({ coat:a[0], state:a[1] })), done:t.done, total:t.total, alert:t.alert }))(fl(f)));
+}
+
+// ---------- 지반 ----------
+const btn = (label, fn, o) => Object.assign({ label, fn }, o);
+const X = { label:'닫기', x:true };
+function groundModel() {
+  if (confirmInt) return { icon:['stop'], strong:'지금 모두 멈출까요?', small:'즉시 중단해도 미완료 변경은 지우지 않습니다', btns:[btn('멈춘다', interrupt, { go:true }), btn('취소', () => { confirmInt = false; wantFocus = 'first'; dirty = true; }, { id:'int-no' })] };
+  if (view === 'building' || (view === 'list' && back === 'building')) {   // 건물: 모든 층 중에서 가장 급한 일 하나
+    const go = btn('층으로 가기', () => setView('office'), { go:true });
+    if (floorSel) return { icon:['building'], strong:floorSel.name + ' 층', small:fl(floorSel).text + '. 시안에는 mmCode 층의 사무실만 있습니다', btns:[Object.assign({ fn:() => { floorSel = null; dirty = true; } }, X)] };
+    if (decision) return { turn:true, icon:['face', main], strong:'mmCode 층: 결정 대기', small:decision.q, btns:[go] };
+    if (blocked) return { turn:true, icon:['box', blocked], strong:'mmCode 층: 단위 막힘', small:blocked.id + ' ' + EV[blocked.last[0]] + ' ' + blocked.last[1], btns:[go] };
+    if (frozen || stopApplied) return { icon:['stop'], strong:'mmCode 층: 사용자 정지', small:frozen ? '즉시 중단을 적용했습니다' : '단위 후 정지를 적용했습니다', btns:[btn('계속', resume, { go:true })] };
+    if (elseAlert) { const f = fl(FLOORS[2]);
+      return { turn:true, icon:['face', { coat:f.agents[0][0], state:'error' }], strong:f.name + ' 층: 환경·한도', small:f.text, btns:[btn('층으로 가기', () => { floorSel = FLOORS[2]; wantFocus = 'first'; dirty = true; }, { go:true })] }; }
+    return { icon:['building'], strong:'조용합니다. 나설 일이 없습니다', small:'층 ' + FLOORS.length + '개가 일하거나 쉬는 중입니다', btns:[] };
+  }
+  if (sel && sel.kind === 'actor') { const a = sel.ref;
+    if (msgOpen) return { icon:['face', a], form:a, btns:[btn('보내기', null, { go:true, submit:true }), Object.assign({ fn:() => { msgOpen = false; wantFocus = 'first'; dirty = true; } }, X)] };
+    const d = a.dir, note = d && d.status === '접수' ? '보낸 지시를 접수했습니다' : stateOf(a) + (a.say && a.say !== stateOf(a) ? '. ' + a.say : '');
+    return { icon:['face', a], strong:a.name, pill:a.harness + ', ' + a.model + ', effort ' + a.effort, small:note,
+      btns:[btn('메시지', () => { msgOpen = true; wantFocus = '#msg'; dirty = true; }, { go:true }), Object.assign({ fn:() => select(null), label:'선택 풀기' }, { x:true })] }; }
+  if (sel && sel.kind === 'unit') { const u = sel.ref;
+    return { icon:['box', u], strong:u.id + ' ' + u.title, pill:PHASE[u.phase] + ' 단계', small:(u.blocked ? '단위 막힘. ' : '') + '최근 증거: ' + (u.last ? EV[u.last[0]] + ' ' + u.last[1] : '아직 없음'),
+      btns:[Object.assign({ fn:() => select(null), label:'선택 풀기' }, { x:true })] }; }
+  if (decision) return { turn:true, icon:['face', main], strong:decision.q, small:'결정 대기. ' + decision.blocks.join('와 ') + '가 이 답을 기다립니다',
+    btns:[btn(decision.yes, () => answer(decision.yes), { go:true }), btn(decision.no, () => answer(decision.no))] };
+  if (blocked) return { turn:true, icon:['box', blocked], strong:blocked.id + ' 단위 막힘', small:EV[blocked.last[0]] + ' ' + blocked.last[1] + '. 일꾼이 멈췄습니다',
+    btns:[btn('일꾼에게 메시지', () => { sel = { kind:'actor', ref:worker }; msgOpen = true; wantFocus = '#msg'; dirty = true; }, { go:true })] };
+  if (frozen) return { icon:['stop'], strong:'사용자 정지 상태입니다', small:'즉시 중단을 적용했습니다. 미완료 변경은 지우지 않았습니다', btns:[btn('계속', resume, { go:true })] };
+  if (stopApplied) return { icon:['stop'], strong:'사용자 정지 상태입니다', small:'단위 후 정지를 적용했습니다. 다음 단위를 시작하지 않습니다', btns:[btn('계속', resume, { go:true })] };
+  const u = units.find(u => ['build', 'verify', 'review'].includes(u.phase));
+  const small = intReq ? '즉시 중단을 접수했습니다' : stopReq ? '이 단위를 마치면 멈춥니다' : u ? u.id + ' ' + u.title + ': ' + PHASE[u.phase] + ' 단계' : '진행 중인 단위가 없습니다';
+  return { icon:['bell'], strong:elseAlert ? '이 층은 조용합니다' : '조용합니다. ' + calm(actors), small, btns:[btn(stopReq ? '정지 접수됨' : '단위 후 정지', askStop, { disabled:!!stopReq }), btn('중단', () => { confirmInt = true; wantFocus = '#int-no'; dirty = true; }, { aria:'즉시 중단' })] };
+}
+function iconCanvas(spec, size) { const c = el('canvas'); c.width = 16; c.height = 16; if (size) { c.style.width = size + 'px'; c.style.height = size + 'px'; }
+  MM.icon(c.getContext('2d'), MM.PAL.day, spec[0], spec[1]); return c; }
+function mkBtn(b) { const e = el('button', 'btn' + (b.go ? ' go' : '') + (b.x ? ' x' : '')); e.type = b.submit ? 'submit' : 'button'; if (b.id) e.id = b.id; e.disabled = !!b.disabled;
+  if (b.aria) e.setAttribute('aria-label', b.aria);
+  if (b.x) { e.setAttribute('aria-label', b.label); e.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8"/></svg>'; } else e.textContent = b.label;
+  if (b.fn) e.onclick = b.fn; return e; }
+let gSig = '', wasTurn = false;
+function renderGround() {
+  const m = groundModel();
+  const sig = JSON.stringify([m.turn, m.icon[0], m.icon[1] && (m.icon[1].id || m.icon[1].coat) + (m.icon[1].state || m.icon[1].phase || ''), m.strong, m.pill, m.small, m.form && m.form.id, m.btns.map(b => [b.label, b.disabled])]);
+  if (sig === gSig) return; const first = !gSig; gSig = sig;
+  const had = ground.contains(document.activeElement);
+  ground.className = 'ground' + (m.turn ? ' turn' : '') + (m.turn && !wasTurn && !reduce && !first ? ' enter' : ''); wasTurn = !!m.turn;
+  const box = m.form ? el('form', 'ground-form') : null, host = box || ground;
+  ground.textContent = '';
+  if (box) { box.style.cssText = 'display:contents'; ground.appendChild(box);
+    box.addEventListener('submit', e => { e.preventDefault(); const v = $('msg').value.trim(); if (v) { wantFocus = 'first'; sendMsg(m.form, v); } }); }
+  const ic = el('div', 'g-icon'); ic.appendChild(iconCanvas(m.icon)); host.appendChild(ic);
+  const tx = el('div', 'g-text');
+  if (m.form) { const lb = el('label', '', m.form.name + '에게 보낼 메시지'); lb.htmlFor = 'msg'; const inp = el('input'); inp.id = 'msg'; inp.type = 'text'; inp.autocomplete = 'off'; inp.placeholder = '예: 시험부터 다시 실행해 줘'; inp.required = true; tx.append(lb, inp); }
+  else { const st = el('strong', '', m.strong); if (m.pill) st.appendChild(el('span', 'pill', m.pill)); tx.append(st, el('small', '', m.small)); }
+  host.appendChild(tx);
+  const bs = el('div', 'g-btns'); m.btns.forEach(b => bs.appendChild(mkBtn(b))); host.appendChild(bs);
+  if (wantFocus || had) { const t = wantFocus && wantFocus !== 'first' ? ground.querySelector(wantFocus) : ground.querySelector('button:not(:disabled), input'); if (t) t.focus(); }
+  wantFocus = null;
+}
+
+// ---------- 지붕 ----------
+function renderRoof() {
+  const b = view === 'building' || (view === 'list' && back === 'building');
+  $('nav-b').setAttribute('aria-pressed', view === 'building'); $('nav-l').setAttribute('aria-pressed', view === 'list');
+  $('proj').textContent = b ? '전체 프로젝트' : 'mmCode';
+  $('units').hidden = b; $('else').hidden = b || !elseAlert;
+  const d = doneCount();
+  $('count').textContent = b ? FLOORS.length + '개 층' : '완료 ' + d + '/' + units.length;
+  const us = $('units'); if (us.children.length !== units.length) { us.textContent = ''; units.forEach(() => us.appendChild(el('i'))); }
+  [...us.children].forEach((e, i) => e.classList.toggle('d', i < d));
+  cv.setAttribute('aria-label', view === 'building'
+    ? '건물 단면도. 층 ' + FLOORS.length + '개. 같은 정보가 목록 보기에 글자로 있습니다.'
+    : 'mmCode 사무실. 담당자 ' + actors.length + '명, 완료 ' + d + '/' + units.length + (decision ? ', 결정 대기 1건' : '') + '. 같은 정보가 목록 보기에 글자로 있습니다.');
+}
+
+// ---------- 목록 보기 ----------
+let lSig = '';
+function renderList() {
+  const proj = back !== 'building';
+  const sig = JSON.stringify([proj, elseAlert, frozen, stopApplied, !!decision, actors.map(a => [a.id, a.state, a.say]), units.map(u => [u.phase, u.ev, whyStopped(u)]), dirs.map(d => [d.text, d.status])]);
+  if (sig === lSig) return; lSig = sig;
+  const top = list.scrollTop;
+  list.textContent = '';
+  const sec = (title, tag, cls) => { const s = el('section', cls); s.appendChild(el('h3', '', title)); const l = el(tag || 'ul'); s.appendChild(l); list.appendChild(s); return l; };
+  const halt = (li, why) => { if (why !== '없음') li.appendChild(el('span', 'tag ' + (why === '사용자 정지' ? 'halt' : 'turn'), why)); };   // 멈춤 분류는 있을 때만 적는다
+  if (!proj) { const l = sec('프로젝트', 'ul', 'wide');
+    FLOORS.forEach((f0, i) => { const f = fl(f0), d = floorData()[i], li = el('li', 'l-unit');
+      li.append(el('b', '', f.name), el('span', 'tag', '완료 ' + d.done + '/' + d.total)); halt(li, f.live ? floorWhy() : f.why);
+      li.appendChild(el('span', 'meta', f.live ? calm(actors) : f.text)); l.appendChild(li); });
+    list.scrollTop = top; return; }
+  const la = sec('담당자');
+  actors.forEach(a => { const li = el('li', 'l-agent'); li.appendChild(iconCanvas(['face', a], 32)); const p = el('p');
+    p.append(el('b', '', a.name), document.createTextNode(' ' + stateOf(a) + (a.say && a.say !== stateOf(a) ? '. ' + a.say : '')), el('span', 'meta', a.harness + ', ' + a.model + ', effort ' + a.effort));
+    li.appendChild(p); la.appendChild(li); });
+  const lu = sec('단위');
+  units.forEach(u => { const li = el('li', 'l-unit'); li.append(el('b', '', u.id), el('span', 'ttl', u.title), el('span', 'tag', PHASE[u.phase])); halt(li, whyStopped(u));
+    const ev = Object.keys(EV).filter(k => u.ev[k]).map(k => EV[k] + ' ' + u.ev[k]).join(', ');   // 값이 있는 증거만 둘째 줄에 적는다
+    if (ev) li.appendChild(el('span', 'meta', ev)); lu.appendChild(li); });
+  const ld = sec('지시 기록', 'ol', 'wide');
+  if (!dirs.length) ld.appendChild(el('li', 'meta', '아직 보낸 지시가 없습니다'));
+  dirs.slice(0, 8).forEach(d => { const li = el('li'); li.append(el('b', '', d.kind), document.createTextNode(' ' + d.text + ' '), el('span', 'st', '(' + d.status + ')')); ld.appendChild(li); });
+  list.scrollTop = top;
+}
+
+// ---------- 장면 위의 글자와 클릭 영역 ----------
+const pct = (v, total) => (v / total * 100).toFixed(2) + '%';
+function buildRail() {
+  rail.textContent = '';
+  if (view === 'office') MM.RAIL.forEach(r => { const s = el('span', 'stage', r[0]); s.style.left = pct(r[1], W); rail.appendChild(s); });
+  if (view === 'building') FLOORS.forEach((f, i) => { const s = el('span', 'fname', f.name); const y = MM.FLOOR_Y + i * MM.FLOOR_H + 2;
+    Object.assign(s.style, { left:pct(22, W), top:pct(y, H), width:pct(62, W), height:pct(11, H) }); rail.appendChild(s); });
+}
+const hitMap = new Map(); let bub = null;
+function syncHits() {
+  const want = [];
+  if (view === 'office') {
+    actors.forEach(a => { if (a.bx !== undefined) want.push({ key:'a:' + a.id, cls:' actor', x:a.bx - 2, y:a.by - 2, w:16, h:a.bh + 4, label:a.name + ', ' + a.model + ', ' + stateOf(a), on:sel && sel.ref === a, pick:() => select({ kind:'actor', ref:a }) }); });
+    units.forEach(u => { if (u.place !== 'carry' && u.hx !== undefined) want.push({ key:'u:' + u.id, cls:' unit', x:u.hx - .5, y:u.hy - 2, w:12, h:12, label:u.id + ' ' + u.title + ', ' + PHASE[u.phase] + ' 단계' + (u.blocked ? ', 단위 막힘' : ''), on:sel && sel.ref === u, pick:() => select({ kind:'unit', ref:u }) }); });
+  } else if (view === 'building') FLOORS.forEach((f, i) => { const d = floorData()[i];
+    want.push({ key:'f:' + i, cls:' floor', x:20, y:MM.FLOOR_Y + i * MM.FLOOR_H, w:196, h:21, label:f.name + ' 층, 완료 ' + d.done + '/' + d.total + (d.alert ? ', ' + (f.live ? floorWhy() : fl(f).why) : ''), on:floorSel === f,
+      pick:() => { if (f.live) setView('office'); else { floorSel = f; dirty = true; } } }); });
+  const seen = new Set();
+  want.forEach(h => { seen.add(h.key); let e = hitMap.get(h.key);
+    if (!e) { e = el('button', 'hit' + (h.cls || '')); e.type = 'button'; hits.appendChild(e); hitMap.set(h.key, e); }
+    e.onclick = h.pick;
+    const css = 'left:' + pct(h.x, W) + ';top:' + pct(h.y, H) + ';width:' + pct(h.w, W) + ';height:' + pct(h.h, H);
+    if (e.dataset.css !== css) { e.dataset.css = css; e.style.cssText = css; }
+    if (e.getAttribute('aria-label') !== h.label) e.setAttribute('aria-label', h.label);
+    const on = h.on ? 'true' : 'false'; if (e.getAttribute('aria-pressed') !== on) e.setAttribute('aria-pressed', on); });
+  hitMap.forEach((e, k) => { if (!seen.has(k)) { e.remove(); hitMap.delete(k); } });
+  // 말풍선: 상태가 바뀐 직후에만, 가장 최근 것 하나만 보인다. 주의 상태는 픽셀 표시만 쓴다(지반 문구와 겹치지 않게).
+  const mute = a => ['ask', 'error', 'stopped'].includes(a.state) || (blocked && a === worker);
+  const sp = view === 'office' ? actors.filter(a => a.sayT > 0 && a.say && a.by !== undefined && !mute(a)).sort((p, q) => q.sayAt - p.sayAt)[0] : null;
+  if (!sp) { if (bub) { bub.remove(); bub = null; } return; }
+  if (!bub) { bub = el('div', 'bub'); bub.appendChild(el('span')); bubs.appendChild(bub); }
+  if (bub.firstChild.textContent !== sp.say) bub.firstChild.textContent = sp.say;
+  const k = W / hits.clientWidth, w = bub.offsetWidth * k, h = bub.offsetHeight * k, cx = sp.bx + 6, y0 = Math.max(h + 5, sp.by - 3);   // 논리 좌표. y 는 말풍선의 아래쪽
+  const fit = x => Math.min(W - w / 2 - 4, Math.max(w / 2 + 4, x));
+  const over = (v, x0, x1, y0, y1) => x0 < v[0] + w / 2 && x1 > v[0] - w / 2 && y0 < v[1] && y1 > v[1] - h;
+  const others = actors.filter(a => a !== sp && a.by !== undefined);
+  const onBox = v => units.some(u => u.place !== 'carry' && u.hx !== undefined && over(v, u.hx, u.hx + 11, u.hy - 1, u.hy + 8));
+  const onActor = v => others.some(a => over(v, a.bx, a.bx + 12, a.by, a.by + 8));
+  const onGlyph = v => others.some(a => ['sleep', 'think', 'stopped', 'done'].includes(a.state) && over(v, a.bx + 2, a.bx + 11, a.top, a.by));
+  // 자리 후보: 가운데, 왼쪽, 오른쪽을 머리 바로 위와 한 칸 더 위에서 본다. 상자, 다른 캐릭터의 얼굴, 머리 위 표시 순서로 피한다
+  const cost = v => (onBox(v) ? 4 : 0) + (onActor(v) ? 2 : 0) + (onGlyph(v) ? 1 : 0);
+  const xs = [cx, cx - w / 2 + 1, cx + w / 2 - 1].map(fit), best = xs.map(v => [v, y0]).concat(xs.map(v => [v, Math.max(h + 5, y0 - 10)])).reduce((b, v) => cost(v) < cost(b) ? v : b);
+  const x = best[0], y = best[1];
+  const tx = Math.max(8 - w / 2, Math.min(w / 2 - 8, cx - x));   // 꼬리는 말하는 캐릭터를 가리킨다. 둥근 모서리에 걸치지 않게 8px 안쪽에 둔다
+  bub.style.left = pct(x, W); bub.style.top = pct(y, H); bub.style.setProperty('--tx', (tx / k).toFixed(1) + 'px');
+}
+
+// ---------- 그리기와 반복 ----------
+function draw() {
+  const P = pal(), st = { fr, night:night(), view, actors, units, lamp, stopSign:!!stopReq || frozen, decision:!!decision, floors:null,
+    doorOpen:actors.some(a => a.moving && a.x < 30 && a.y <= 86) };
+  gf.clearRect(0, 0, W, H); $('scene').classList.toggle('night', st.night);
+  if (view === 'building') { st.floors = floorData(); MM.drawBuilding(g, st, P); } else MM.drawOffice(g, st, P);
+  MM.drawFx(gf, st, P);
+}
+function render() {
+  const isList = view === 'list';
+  $('scene').hidden = isList; list.hidden = !isList;   // 지반은 목록 보기에서도 같은 자리에 있다
+  renderRoof(); if (isList) renderList(); renderGround();
+}
+let last = performance.now(), acc = 0, raf = 0, stale = true;
+function update(dt) {
+  clock += dt; frT += dt; if (!reduce && frT > 0.34) { frT = 0; fr ^= 1; stale = true; }
+  tasks = tasks.filter(t => { if (frozen && !t.always) return true; t.t -= dt; if (t.t > 0) return true; t.fn(); dirty = true; return false; });
+  [...actors].forEach(a => { const x = a.x, y = a.y; stepActor(a, dt); if (a.x !== x || a.y !== y) stale = true; });
+}
+function paint() { if (view !== 'list' && (stale || dirty)) { stale = false; draw(); syncHits(); } if (dirty) { dirty = false; render(); } }
+function frame(now) {
+  raf = requestAnimationFrame(frame);
+  acc += Math.min(0.2, (now - last) / 1000); last = now;
+  if (acc < (reduce ? 0.5 : 1 / 12)) return;
+  update(acc); acc = 0; paint();
+}
+document.addEventListener('visibilitychange', () => { cancelAnimationFrame(raf); if (!document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); } });
+
+// ---------- 입력 ----------
+$('nav-b').onclick = () => setView(view === 'building' ? 'office' : 'building');
+$('nav-l').onclick = () => setView(view === 'list' ? back : 'list');
+$('else').onclick = () => setView('building');
+function setElse(on) { elseAlert = on; $('else-t').setAttribute('aria-pressed', on); dirty = true; }
+$('else-t').onclick = () => setElse(!elseAlert);
+hits.addEventListener('click', e => { if (e.target === hits && (sel || floorSel)) { floorSel = null; select(null); } });
+document.addEventListener('keydown', e => { if (e.key !== 'Escape') return;
+  if (confirmInt) confirmInt = false; else if (msgOpen) msgOpen = false; else if (sel) sel = null; else if (floorSel) floorSel = null; else return;
+  wantFocus = 'first'; dirty = true; });
+document.querySelectorAll('[data-jump]').forEach(b => { b.onclick = () => { if (view !== 'office') setView('office'); jump(b.dataset.jump); }; });
+function setTime(m) { timeMode = m; document.querySelectorAll('[data-time]').forEach(b => b.setAttribute('aria-pressed', b.dataset.time === m)); dirty = true; }
+document.querySelectorAll('[data-time]').forEach(b => { b.onclick = () => setTime(b.dataset.time); });
+
+// 누른 결과는 다음 프레임을 기다리지 않고 바로 보여 준다. 위의 입력 처리보다 뒤에 등록한다.
+['click', 'keydown', 'submit'].forEach(t => document.addEventListener(t, () => { if (dirty) paint(); }));
+
+// ---------- 시작 ----------
+g.imageSmoothingEnabled = false; gf.imageSmoothingEnabled = false;
+document.querySelectorAll('canvas[data-coat]').forEach(c => MM.icon(c.getContext('2d'), MM.PAL.day, 'face', { coat:c.dataset.coat, state:'idle' }));
+(c => { const o = { fillStyle:'', fillRect(x, y, w, h) { c.fillStyle = this.fillStyle; c.fillRect(x - 2, y - 5, w, h); } }; MM.icon(o, Object.assign({}, MM.PAL.day, { ink:'#fffdf4' }), 'face', { coat:'tabby', state:'idle' }); })($('mb').getContext('2d'));
+reset(); buildRail();
+// 주소의 #이름으로 시작 상태를 고른다(예: #decision-night). 캡처와 공유용.
+const tokens = location.hash.slice(1).split('-');
+['quiet', 'decision', 'stopped', 'blocked'].forEach(n => { if (tokens.includes(n)) jump(n); });
+if (tokens.includes('night')) setTime('night'); if (tokens.includes('day')) setTime('day');
+if (tokens.includes('alert')) setElse(true);
+if (tokens.includes('select')) select({ kind:'actor', ref:main });
+if (tokens.includes('unit')) select({ kind:'unit', ref:unit('U3') });
+if (tokens.includes('message')) { select({ kind:'actor', ref:main }); msgOpen = true; }
+if (tokens.includes('confirm')) confirmInt = true;
+if (tokens.includes('building')) setView('building');
+if (tokens.includes('list')) setView('list');
+dirty = true; paint();
+raf = requestAnimationFrame(frame);
+})();
+</script>
