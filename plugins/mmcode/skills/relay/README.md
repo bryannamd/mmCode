@@ -64,3 +64,4 @@ Claude에게 한 문장을 말한다. 인계 문서는 Claude가 만든다. 사�
 - 규칙: `references/rules.md` (R13 조건 · R14 경계와 복구 · R15 판단과 중단)
 - 인계 문서 양식: `templates/HANDOFF.md`
 - 기계 부분: `scripts/eval-goal.sh` (인자 없이 부르면 사용법이 나온다)
+- 단계 전환·검사 기록: `scripts/phase.sh` (인자 없이 부르면 사용법이 나온다)

@@ -45,6 +45,12 @@ CLAUDE.md 의 Advisor/Worker·세션 핸드오프·Git 안전·다중 세션 규
 4. **독립 검수**: 새 컨텍스트(`/code-review` 또는 검수 에이전트)에 diff + 신규 테스트만. 뺄 것 1개 이상을 함께 요구한다(plan 5절). 시험 밖 실제 경로에 남은 가짜 성공도 찾게 한다(항목은 템플릿). 결과를 `INDEPENDENT_REVIEW.md`(형식은 템플릿). FAIL 이면 수정 → 델타 재검수(회차 상한과 남은 지적 처리는 plan 5절).
 5. **커밋**: 인계 문서 커밋 정책 줄을 읽는다. `확인 후` 면 "커밋할까요?" 후 진행. 다중 세션 흔적이 있으면 `scripts/commit-unit.sh` 2단계(prepare → stat 읽고 → finish). 저장소가 둘 이상이면 저장소별로.
 6. **인계 갱신**: 상태표 그 행만(상태·종료 시각·커밋 해시) + 이월 항목. 이월은 다음 단위를 막는 것만 적고 해소되면 지운다. 막지 않는 minor 는 `docs/relay/<plan>/DEBT.md`(`templates/DEBT.md`) 에 적는다. 반증된 접근은 "확인된 실패"에 적는다(기준은 R12. REPORT 는 다음 세션이 읽지 않기 때문). 단위가 `보류`·`blocked` 로 멈출 때도 적는다. 작업 중 사용자가 더한 요청은 받은 턴에 적는다: 새 일은 상태표에 단위 행으로, 지금 단위의 조건은 이월에 적는다(대화에만 둔 요청은 세션 교체 때 사라진다). 서술은 단위 디렉터리 `REPORT.md` 로. 분량과 인계 문서 보관(`docs/relay/<plan>/archive/`) 기준은 R12.
+   `phase.sh` 로 옮긴 단위의 상태·종료 시각·커밋 칸은 스크립트가 쓴다. 그 칸을 손으로 고치지 않는다(이벤트가 없는 단위의 행은 손으로 쓴다).
+   - 호출: `bash "$S/scripts/phase.sh" <하위 명령> <HANDOFF.md> <단위> ...`. 이벤트는 `<프로젝트>/.mmcode/events.jsonl`(git 제외)에 쌓인다.
+   - 단계 전환: `move <단위> <build|verify|review|done>`. 되돌아가기(`verify`·`review`→`build`)는 `--reason <사유>`가 필요하다. 조건이 안 맞으면 종료 코드 1, 마지막 줄 `REFUSED: <이유>`.
+   - 검사: `check <단위> <종류> -- <명령...>`(종료 코드 0이 통과). `cmd` 종류는 명령이 필수다. 다른 종류는 명령 대신 `--pass|--fail --reason <사유>`도 된다. 실패하면 종료 코드 1, `FAILED: <이유>`.
+   - 커밋 기록: `commit <단위> <저장소> <해시|없음(변경 없음)>`. `review`→`done` 전에 필요하다.
+   - 멈춤: `halt <단위> <decision|stop-after|interrupt|blocked:<단위>>`, `resume <단위>`. `show`는 단위별 단계·멈춤 표를 내고 상태표를 다시 맞춘다.
 7. **교체 판단**: R7(opus 단위 뒤 또는 이 세션에서 2단위를 마친 뒤에만 `rotate`).
 
 ## rotate — 세션 교체 (Herdr 전용)

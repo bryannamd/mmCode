@@ -1,0 +1,529 @@
+#!/usr/bin/env bash
+# relay phase: 단위의 단계 전환·검사 결과·커밋·멈춤을 이벤트 파일에 쓰고 HANDOFF.md 상태표를 다시 만든다.
+# 사용: phase.sh <하위 명령> <HANDOFF.md> [인자...]   (인자 없이 부르면 사용법이 나온다)
+# 종료 코드: 0 성공 · 1 거부 또는 검사 실패(stdout 마지막 줄 REFUSED: <이유> 또는 FAILED: <이유>) · 2 사용 오류
+# 이벤트 파일: <프로젝트>/.mmcode/events.jsonl (추가만 한다). 읽기·판정·추가·상태표 갱신은 .mmcode/.lock 을 잡고 한다.
+# check 의 명령 실행은 잠금 밖에서 돈다. 거부하면 이벤트를 쓰지 않는다.
+# 근거: docs/plans/orchestration-plan.md 3.2~3.5절, 4.1절. 외부 의존 없음(bash + python3 + git).
+set -euo pipefail
+command -v python3 >/dev/null 2>&1 || { echo "python3 이 없다" >&2; exit 2; }
+command -v git >/dev/null 2>&1 || { echo "git 이 없다" >&2; exit 2; }
+exec python3 -I - "$@" <<'PY'
+import contextlib, fcntl, json, os, re, shlex, subprocess, sys, tempfile, traceback
+from datetime import datetime
+
+USAGE = '''사용: phase.sh <하위 명령> <HANDOFF.md> [인자...]
+  move <단위> <단계> [--reason <사유>]     단계: queued build verify review done
+  check <단위> <종류> [--reason <사유>] [--evidence <경로>] [--pass|--fail] [-- <명령...>]
+                                           종류: cmd(명령 필수) manual fail-first review mutation cross-review coverage ui-review
+  commit <단위> <저장소> <해시|없음(변경 없음)>
+  halt <단위> <값>                         값: decision stop-after interrupt blocked:<그 단위>
+  resume <단위>
+  show                                     단위별 단계와 멈춤 표, 상태표 다시 생성'''
+
+NOCHANGE = '없음(변경 없음)'
+PHASES = ['queued', 'build', 'verify', 'review', 'done']
+NEXT = {'queued': ['build'], 'build': ['verify'], 'verify': ['review', 'build'], 'review': ['done', 'build'], 'done': []}
+BACK = {('verify', 'build'), ('review', 'build')}
+PHASE_KO = {'queued': '대기', 'build': '구현', 'verify': '검증', 'review': '검수', 'done': '완료'}
+STATUS_KO = {'queued': '미착수', 'build': '진행', 'verify': '진행', 'review': '진행', 'done': '완료'}
+KINDS = ['cmd', 'manual', 'fail-first', 'review', 'mutation', 'cross-review', 'coverage', 'ui-review']
+HALTS = ['decision', 'stop-after', 'interrupt']
+NEED_COLS = ['단위', '상태', '종료 시각', '커밋']
+GITENV = {k: v for k, v in os.environ.items()
+          if k not in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX')}
+
+
+class Usage(Exception):
+    pass
+
+
+class Refused(Exception):
+    pass
+
+
+class Failed(Exception):
+    pass
+
+
+def read(p):
+    with open(p, encoding='utf-8', newline='') as f:
+        return f.read()
+
+
+def write_atomic(path, text):
+    # 임시 파일에 다 쓴 뒤 교체한다. 줄바꿈 문자는 그대로 둔다.
+    d = os.path.dirname(path)
+    mode = os.stat(path).st_mode & 0o777
+    fd, tmp = tempfile.mkstemp(dir=d, prefix='.tmp-')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='') as f:
+            f.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def cell_spans(line):
+    # 표 한 줄을 칸 경계 [(왼쪽 |, 오른쪽 |)] 로 나눈다. \| 는 칸 구분이 아니다. 양 끝이 | 가 아니면 None.
+    s = line.rstrip()
+    bars = [i for i, ch in enumerate(s) if ch == '|' and (i == 0 or s[i - 1] != '\\')]
+    if len(bars) < 2 or bars[0] != 0 or bars[-1] != len(s) - 1:
+        return None
+    return list(zip(bars, bars[1:]))
+
+
+def cell_text(line, span):
+    return line[span[0] + 1:span[1]].strip().replace('\\|', '|')
+
+
+class Ctx:
+    def __init__(self, path):
+        self.hpath = os.path.realpath(path)
+        if not os.path.isfile(self.hpath):
+            raise Usage(f'인계 문서 없음: {path}')
+        self.pdir = os.path.dirname(self.hpath)
+        self.plan = os.path.basename(self.pdir)
+        r = subprocess.run(['git', '-C', self.pdir, 'rev-parse', '--show-toplevel'],
+                           capture_output=True, text=True, env=GITENV)
+        if r.returncode:
+            raise Usage(f'git 저장소가 아니다: {self.pdir}')
+        self.root = os.path.realpath(r.stdout.strip())
+        self.mm = os.path.join(self.root, '.mmcode')
+        self.events = os.path.join(self.mm, 'events.jsonl')
+        self.lockp = os.path.join(self.mm, '.lock')
+
+    def ensure_dir(self):
+        os.makedirs(self.mm, exist_ok=True)
+        gi = os.path.join(self.mm, '.gitignore')
+        if not os.path.exists(gi):
+            with open(gi, 'w', encoding='utf-8') as f:
+                f.write('*\n')
+
+    def rel(self, p):
+        a = os.path.realpath(p)
+        return os.path.relpath(a, self.root) if a == self.root or a.startswith(self.root + os.sep) else a
+
+
+@contextlib.contextmanager
+def locked(c):
+    c.ensure_dir()
+    fd = os.open(c.lockp, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def load_events(c):
+    # 이 계획의 이벤트만, 파일 순서대로.
+    out = []
+    try:
+        f = open(c.events, encoding='utf-8')
+    except FileNotFoundError:
+        return out
+    with f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(e, dict) and e.get('plan') == c.plan:
+                out.append(e)
+    return out
+
+
+def append_event(c, etype, unit, data):
+    actor = {k: os.environ.get(v) for k, v in
+             (('terminal', 'HC_TERMINAL_ID'), ('harness', 'PHASE_HARNESS'), ('model', 'PHASE_MODEL'), ('effort', 'PHASE_EFFORT'))}
+    e = {'ts': datetime.now().astimezone().isoformat(timespec='seconds'), 'type': etype, 'plan': c.plan, 'unit': unit,
+         'actor': {k: v for k, v in actor.items() if v}, 'data': data}
+    pre = ''
+    try:
+        with open(c.events, 'rb') as f:  # 끝 줄에 개행이 없으면(끊긴 쓰기) 새 이벤트가 그 줄에 붙지 않게 개행부터 쓴다
+            f.seek(-1, 2)
+            if f.read(1) != b'\n':
+                pre = '\n'
+    except OSError:
+        pass
+    with open(c.events, 'a', encoding='utf-8') as f:
+        f.write(pre + json.dumps(e, ensure_ascii=False) + '\n')
+        f.flush()
+        os.fsync(f.fileno())
+    return e
+
+
+class Table:
+    # HANDOFF.md 의 ## 상태표 표. 줄 목록을 들고 있고, 고친 줄만 바꿔 다시 쓴다.
+    def __init__(self, c):
+        self.path = c.hpath
+        self.lines = read(self.path).split('\n')
+        start = next((i for i, ln in enumerate(self.lines) if re.fullmatch(r'## 상태표\s*', ln.rstrip('\r'))), None)
+        if start is None:
+            raise Usage('상태표 절(## 상태표)이 없다')
+        end = next((i for i in range(start + 1, len(self.lines)) if self.lines[i].startswith('## ')), len(self.lines))
+        hi = next((i for i in range(start + 1, end) if self.lines[i].startswith('|')), None)
+        if hi is None:
+            raise Usage('상태표 표가 없다')
+        spans = cell_spans(self.lines[hi])
+        if spans is None:
+            raise Usage('상태표 머리줄을 읽지 못한다')
+        names = [cell_text(self.lines[hi], s) for s in spans]
+        self.cols = {n: i for i, n in enumerate(names)}
+        missing = [n for n in NEED_COLS if n not in self.cols]
+        if missing:
+            raise Usage('상태표에 열이 없다: ' + ', '.join(missing))
+        self.rows = []  # [줄 번호, 칸 경계]
+        for li in range(hi + 1, end):
+            ln = self.lines[li]
+            if not ln.startswith('|'):
+                break
+            sp = cell_spans(ln)
+            if sp is None or set(ln.replace('|', '')) <= set('-: \r'):
+                continue
+            if len(sp) > self.cols['단위']:
+                self.rows.append([li, sp])
+        self.dirty = False
+
+    def text(self, row, name):
+        li, sp = row
+        i = self.cols.get(name)
+        return cell_text(self.lines[li], sp[i]) if i is not None and i < len(sp) else ''
+
+    def units(self):
+        return [self.text(r, '단위') for r in self.rows]
+
+    def row(self, unit):
+        return next((r for r in self.rows if self.text(r, '단위') == unit), None)
+
+    def set_cells(self, row, want):
+        li, sp = row
+        line = self.lines[li]
+        for name in sorted(want, key=lambda n: -self.cols[n]):  # 오른쪽 칸부터 고쳐야 왼쪽 경계가 유지된다
+            i = self.cols[name]
+            if i >= len(sp) or cell_text(line, sp[i]) == want[name]:
+                continue
+            line = line[:sp[i][0] + 1] + ' ' + want[name].replace('|', '\\|') + ' ' + line[sp[i][1]:]
+        if line != self.lines[li]:
+            self.lines[li] = line
+            row[1] = cell_spans(line)  # 줄 길이가 달라졌으므로 칸 경계를 다시 구한다
+            self.dirty = True
+
+    def save(self):
+        if self.dirty:
+            write_atomic(self.path, '\n'.join(self.lines))
+
+
+def unit_state(evs, unit):
+    s = {'n': 0, 'phase': 'queued', 'halt': None, 'checks': [], 'commits': [], 'done_ts': None}
+    for e in evs:
+        if e.get('unit') != unit:
+            continue
+        s['n'] += 1
+        t, d = e.get('type'), e.get('data')
+        d = d if isinstance(d, dict) else {}
+        if t == 'unit.phase' and d.get('to') in PHASES:
+            s['phase'] = d['to']
+            if d['to'] == 'build':
+                s['commits'] = []
+            elif d['to'] == 'verify':
+                s['checks'] = []
+            elif d['to'] == 'done':
+                s['done_ts'] = e.get('ts')
+        elif t == 'check.result':
+            s['checks'].append(d)
+        elif t == 'unit.commit':
+            s['commits'].append(d)
+        elif t == 'unit.halt':
+            s['halt'] = d.get('reason') or 'halt'
+        elif t == 'unit.resume':
+            s['halt'] = None
+    return s
+
+
+def count_phase(evs, unit):
+    return sum(1 for e in evs if e.get('unit') == unit and e.get('type') == 'unit.phase')
+
+
+def known_phase(tbl, evs, unit):
+    # 이벤트가 없는 단위는 손으로 쓴 상태표를 믿는다: `완료`만 done 으로 본다(phase.sh 를 계획 도중에 들인 경우).
+    s = unit_state(evs, unit)
+    row = tbl.row(unit)
+    if not s['n'] and row is not None and tbl.text(row, '상태') == '완료':
+        return 'done'
+    return s['phase']
+
+
+def status_text(s):
+    h = s['halt']
+    if h and h.startswith('blocked'):
+        return 'blocked'
+    if h in ('stop-after', 'interrupt'):
+        return '보류'
+    return STATUS_KO[s['phase']]
+
+
+def halt_ko(h):
+    if not h:
+        return '-'
+    if h == 'decision':
+        return '결정 대기'
+    if h in ('stop-after', 'interrupt'):
+        return '사용자 정지'
+    return '단위 막힘' if h.startswith('blocked') else h
+
+
+def commit_text(commits):
+    parts = [NOCHANGE if d.get('hash') == NOCHANGE else f"{d.get('repo', '')} {str(d.get('hash', ''))[:7]}" for d in commits]
+    return '; '.join(parts)
+
+
+def sync_table(tbl, evs):
+    # 이 계획의 이벤트가 있는 단위의 행만 고친다. 고치는 칸은 상태·종료 시각·커밋뿐이다.
+    for row in tbl.rows:
+        s = unit_state(evs, tbl.text(row, '단위'))
+        if not s['n']:
+            continue
+        want = {'상태': status_text(s)}
+        if s['phase'] == 'done':
+            try:
+                want['종료 시각'] = datetime.fromisoformat(s['done_ts']).strftime('%Y-%m-%d %H:%M')
+            except (TypeError, ValueError):
+                pass
+            if s['commits']:
+                want['커밋'] = commit_text(s['commits'])
+        tbl.set_cells(row, want)
+    tbl.save()
+
+
+def require_unit(tbl, unit, evs):
+    # 상태표에 있는 단위만 쓴다. 이벤트가 없는데 상태 칸이 미착수·빈 칸이 아니면 손으로 관리하던 단위라 거부한다.
+    row = tbl.row(unit)
+    if row is None:
+        raise Refused(f'상태표에 없는 단위: {unit}')
+    cur = tbl.text(row, '상태')
+    if cur not in ('', '미착수') and not any(e.get('unit') == unit for e in evs):
+        raise Refused(f'{unit} 은 손으로 관리하던 단위다(상태 {cur}). 상태 칸을 미착수로 바꾼 뒤 옮긴다')
+    return row
+
+
+def transact(c, fn):
+    # 잠금 안에서 표와 이벤트를 읽고, fn 이 정한 이벤트를 쓰고, 상태표를 갱신한다. fn 이 None 을 주면 표 갱신만 한다.
+    with locked(c):
+        tbl = Table(c)
+        evs = load_events(c)
+        res = fn(tbl, evs)
+        if res:
+            etype, unit, data = res
+            evs.append(append_event(c, etype, unit, data))
+        sync_table(tbl, evs)
+        return tbl, evs
+
+
+def need(rest, n, exact=True):
+    if len(rest) < n or (exact and len(rest) > n):
+        raise Usage(USAGE)
+
+
+def parse_reason(rest):
+    # move 의 선택 인자: --reason <사유>
+    if not rest:
+        return None
+    if len(rest) != 2 or rest[0] != '--reason' or not rest[1]:
+        raise Usage(USAGE)
+    return rest[1]
+
+
+def cmd_move(c, rest):
+    need(rest, 2, exact=False)
+    unit, to = rest[0], rest[1]
+    reason = parse_reason(rest[2:])
+    if to not in PHASES:
+        raise Usage(f'알 수 없는 단계: {to} (queued build verify review done)')
+
+    def fn(tbl, evs):
+        row = require_unit(tbl, unit, evs)
+        s = unit_state(evs, unit)
+        frm = s['phase']
+        if s['halt']:
+            raise Refused(f'{unit} 은 멈춘 단위다({s["halt"]}). resume 뒤에 옮긴다')
+        if to not in NEXT[frm]:
+            ok = ', '.join(NEXT[frm]) or '없음'
+            raise Refused(f'{unit} {frm}→{to} 는 안 된다. {frm} 에서 갈 수 있는 단계: {ok}')
+        if (frm, to) in BACK and not reason:
+            raise Refused(f'{frm}→{to} 되돌아가기는 --reason 이 필요하다')
+        if frm == 'queued':
+            pre = [t for t in re.split(r'[,\s]+', tbl.text(row, '선행')) if t and t not in ('—', '-')]
+            pend = [f'{p}({PHASE_KO[ph]})' for p in pre for ph in [known_phase(tbl, evs, p)] if ph != 'done']
+            if pend:
+                raise Refused('선행 단위가 완료가 아니다: ' + ', '.join(pend))
+        elif frm == 'verify' and to == 'review':
+            last = {}
+            for d in s['checks']:
+                last[(d.get('kind'), d.get('command') or d.get('reason'))] = bool(d.get('pass'))
+            if not last:
+                raise Refused('검증 단계 진입 뒤의 검사 결과가 없다')
+            bad = [f'{k[0]}' + (f' ({k[1]})' if k[1] else '') for k, ok in last.items() if not ok]
+            if bad:
+                raise Refused('통과하지 못한 검사가 있다: ' + ', '.join(bad))
+        elif frm == 'review' and to == 'done' and not s['commits']:
+            raise Refused('구현 단계 진입 뒤의 커밋 기록이 없다')
+        data = {'from': frm, 'to': to}
+        if reason:
+            data['reason'] = reason
+        return 'unit.phase', unit, data
+
+    transact(c, fn)
+    print(f'OK: {unit} {rest[1]} 로 옮겼다')
+
+
+def cmd_check(c, rest):
+    need(rest, 2, exact=False)
+    unit, kind = rest[0], rest[1]
+    if kind not in KINDS:
+        raise Usage(f'알 수 없는 종류: {kind} ({" ".join(KINDS)})')
+    reason = evidence = flag = cmd = None
+    args, i = rest[2:], 0
+    while i < len(args):
+        a = args[i]
+        if a == '--':
+            cmd = args[i + 1:]
+            if not cmd:
+                raise Usage('-- 뒤에 명령이 없다')
+            break
+        if a in ('--reason', '--evidence'):
+            if i + 1 >= len(args):
+                raise Usage(f'{a} 에 값이 없다')
+            if a == '--reason':
+                reason = args[i + 1]
+            else:
+                evidence = args[i + 1]
+            i += 2
+        elif a in ('--pass', '--fail'):
+            if flag and flag != a:
+                raise Usage('--pass 와 --fail 을 함께 쓸 수 없다')
+            flag = a
+            i += 1
+        else:
+            raise Usage(f'알 수 없는 인자: {a}')
+    if cmd and flag:
+        raise Usage('명령이 있으면 --pass, --fail 을 쓸 수 없다')
+    if kind == 'cmd' and not cmd:
+        raise Usage('cmd 종류는 -- 뒤에 명령이 필요하다')
+    if not cmd and (not flag or not reason):
+        raise Usage('명령이 없으면 --pass 또는 --fail 과 --reason 이 필요하다')
+    evs0 = load_events(c)
+    require_unit(Table(c), unit, evs0)  # 거부될 단위의 명령은 돌리지 않는다
+    phases0 = count_phase(evs0, unit)
+    data = {'kind': kind}
+    log = None
+    if cmd:
+        c.ensure_dir()
+        os.makedirs(os.path.join(c.mm, 'logs'), exist_ok=True)
+        stamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+        n = 1
+        while True:
+            log = os.path.join(c.mm, 'logs', f'{c.plan}-{unit}-{kind}-{stamp}' + (f'-{n}' if n > 1 else '') + '.log')
+            try:
+                f = open(log, 'xb')
+                break
+            except FileExistsError:
+                n += 1
+        with f:
+            try:
+                rc = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT).returncode
+            except OSError as e:
+                f.write(f'{e}\n'.encode('utf-8'))
+                rc = 127
+        data.update({'pass': rc == 0, 'command': shlex.join(cmd), 'exit': rc})
+    else:
+        data['pass'] = flag == '--pass'
+    if reason:
+        data['reason'] = reason
+    if evidence:
+        data['evidence'] = c.rel(evidence)
+    elif log:
+        data['evidence'] = c.rel(log)
+    def fn(tbl, evs):
+        require_unit(tbl, unit, evs)
+        if count_phase(evs, unit) != phases0:
+            raise Refused(f'검사 도중 {unit} 의 단계가 바뀌었다. 다시 돌린다')
+        return 'check.result', unit, data
+
+    transact(c, fn)
+    what = f'{kind} 통과' if data['pass'] else f'{kind} 실패'
+    tail = f' (증거 {data["evidence"]})' if data.get('evidence') else ''
+    if not data['pass']:
+        why = f'종료 코드 {data["exit"]}' if cmd else reason
+        raise Failed(f'{kind} {why}{tail}')
+    print(f'OK: {unit} {what}{tail}')
+
+
+def cmd_commit(c, rest):
+    need(rest, 3)
+    unit, repo, h = rest
+    if not repo or not (h == NOCHANGE or re.fullmatch(r'[0-9a-fA-F]{7,40}', h)):
+        raise Usage(f'해시는 16진수 7~40자 또는 {NOCHANGE} 이다')
+    transact(c, lambda tbl, evs: (require_unit(tbl, unit, evs) and ('unit.commit', unit, {'repo': repo, 'hash': h})))
+    print(f'OK: {unit} 커밋 기록 {repo} {h[:7] if h != NOCHANGE else h}')
+
+
+def cmd_halt(c, rest):
+    need(rest, 2)
+    unit, val = rest
+    if val not in HALTS and val != f'blocked:{unit}':
+        raise Usage(f'멈춤 값은 {" ".join(HALTS)} blocked:{unit} 중 하나다')
+    transact(c, lambda tbl, evs: (require_unit(tbl, unit, evs) and ('unit.halt', unit, {'reason': val})))
+    print(f'OK: {unit} 멈춤 {val}')
+
+
+def cmd_resume(c, rest):
+    need(rest, 1)
+    unit = rest[0]
+
+    def fn(tbl, evs):
+        require_unit(tbl, unit, evs)
+        if not unit_state(evs, unit)['halt']:
+            raise Refused(f'{unit} 은 멈춘 단위가 아니다')
+        return 'unit.resume', unit, {}
+
+    transact(c, fn)
+    print(f'OK: {unit} 재개')
+
+
+def cmd_show(c, rest):
+    need(rest, 0)
+    tbl, evs = transact(c, lambda tbl, evs: None)
+    print('| 단위 | 단계 | 멈춤 |')
+    print('|---|---|---|')
+    for u in tbl.units():
+        s = unit_state(evs, u)
+        print(f'| {u} | {PHASE_KO[known_phase(tbl, evs, u)]} | {halt_ko(s["halt"])} |')
+
+
+CMDS = {'move': cmd_move, 'check': cmd_check, 'commit': cmd_commit, 'halt': cmd_halt, 'resume': cmd_resume, 'show': cmd_show}
+
+try:
+    if len(sys.argv) < 3 or sys.argv[1] not in CMDS:
+        raise Usage(USAGE)
+    CMDS[sys.argv[1]](Ctx(sys.argv[2]), sys.argv[3:])
+except Usage as e:
+    print(e, file=sys.stderr)
+    sys.exit(2)
+except Refused as e:
+    print(f'REFUSED: {e}')
+    sys.exit(1)
+except Failed as e:
+    print(f'FAILED: {e}')
+    sys.exit(1)
+except Exception:
+    traceback.print_exc()
+    sys.exit(2)
+PY
