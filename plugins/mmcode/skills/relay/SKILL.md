@@ -31,7 +31,7 @@ CLAUDE.md 의 Advisor/Worker·세션 핸드오프·Git 안전·다중 세션 규
 ## resume — 새 세션 첫 응답
 
 1. 인계 문서 **재개 블록·상태표·이월·확인된 실패만** 읽는다. 이전 로그·증거 REPORT 재독 금지(필요한 설계·소스만 좁게).
-2. 첫 응답에 상태표를 표로 낸다: `bash "$S/scripts/status.sh" <HANDOFF.md>` 출력(현재 단위·완료/남은 단위·진행률·최근 단위 소요·남은 시간 범위).
+2. 먼저 `bash "$S/scripts/phase.sh" show <HANDOFF.md>`로 상태표를 기록에 맞추고 단위별 단계와 열린 결정·지시를 읽는다(다른 곳에서 보낸 답과 `direct resume`은 이때 상태표에 반영된다). 열린 지시는 이전 세션에서 넘어온 것도 그대로 따른다. 이어서 첫 응답에 상태표를 표로 낸다: `bash "$S/scripts/status.sh" <HANDOFF.md>` 출력(현재 단위·완료/남은 단위·진행률·최근 단위 소요·남은 시간 범위).
 3. 프롬프트에 이전 세션 터미널 주소가 있으면 `hc get <주소>` 로 그 터미널이 `idle`·`done` 인지 확인 후 `hc kill <주소>` 뒤 `hc rm <주소>`. `working` 이면 닫지 않고 단위 끝에 재확인. 한 번에 하나만.
 4. 첫 작업 착수. 세션 연번은 인계 문서 줄을 읽고 +1 해 갱신.
 
@@ -52,7 +52,10 @@ CLAUDE.md 의 Advisor/Worker·세션 핸드오프·Git 안전·다중 세션 규
    - 실패 먼저: `check <단위> fail-first -- <시험 명령>`은 명령이 실패해야 통과다. 구현 전에 `build` 단계에서 기록한다.
    - 위험 등급: 상태표에 선택 열 `등급`(가벼움·일반·고위험)과 `화면`(`✔`이면 화면이 있는 단위)을 두면 등급에 맞는 증거가 없을 때 전환을 거부한다. 일반은 `fail-first`(→`verify`), `cmd` 또는 `manual`(→`review`), `review`·`mutation`(→`done`)이 필요하다. 고위험은 `manual`로 대신할 수 없고 `cmd`가 필수이며 `cross-review`가 더 필요하다. 화면이 있으면 `ui-review`가 더 필요하다. 열이 없거나 칸이 비면 더하는 조건이 없다. `show`의 `남은 증거` 열에 빠진 증거가 나온다. auto(`eval-goal.sh`)는 12열 상태표만 받으므로 이 두 열을 auto 계획에는 아직 쓰지 않는다.
    - 커밋 기록: `commit <단위> <저장소> <해시|없음(변경 없음)>`. `review`→`done` 전에 필요하다.
-   - 멈춤: `halt <단위> <decision|stop-after|interrupt|blocked:<단위>>`, `resume <단위>`. `show`는 단위별 단계·멈춤 표를 내고 상태표를 다시 맞춘다.
+   - 멈춤: `halt <단위> <decision|stop-after|interrupt|blocked:<단위>>`, `resume <단위>`. `show`는 단위별 단계·멈춤 표와 열린 결정·지시를 내고 상태표를 다시 맞춘다.
+   - 결정: 사람의 답이 필요하면 `ask <단위|-> --question <질문> [--recommend <추천>] [--impact <영향>] [--option <선택지>]…`로 묻는다. 그 단위는 `decision`으로 멈춘다. 답은 `answer <ID> --answer <답> [--by user|planner|cross-review] [--undo <되돌리는 방법>]`로 적고, 적으면 멈춤이 풀린다. 결정 대기열은 `<프로젝트>/.mmcode/DECISIONS.md`에 생성된다(손으로 고치지 않는다).
+   - 지시: 사용자나 모니터가 `direct <message|stop-after|interrupt|reorder|resume> [--text <글>] [--terminal <주소>]`로 보낸다. 계획자는 단위 경계마다 `show`로 열린 지시를 읽고, 따랐으면 `applied <ID>`, 따르지 않았으면 `rejected <ID> --reason <이유>`를 적는다(`stop-after`·`interrupt`는 거부할 수 없다). 열린 `stop-after`가 있으면 다음 단위의 `move … build`가 거부된다. 열린 `interrupt`는 `gate`(도구 호출 전 훅용, 종료 코드 2)가 도구 호출을 막는다. 둘 다 사용자의 `direct resume`으로 풀린다. 계획자는 `direct resume`을 스스로 실행하지 않는다.
+   - relay가 아닌 세션과 codex·agy는 `<HANDOFF.md>` 자리에 프로젝트 폴더를 넣어 `ask`·`answer`·`direct`·`applied`·`rejected`·`gate`·`show`만 쓴다.
 7. **교체 판단**: R7(opus 단위 뒤 또는 이 세션에서 2단위를 마친 뒤에만 `rotate`).
 
 ## rotate — 세션 교체 (Herdr 전용)

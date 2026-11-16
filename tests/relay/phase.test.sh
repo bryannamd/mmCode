@@ -452,6 +452,194 @@ t_g_status() {  # 등급·화면 열이 있는 상태표에도 status.sh 가 돈
   has "$out" "| 현재 단위 | U1 내용U1 |" "status.sh" || return 1
 }
 
+evt() {  # evt <뒤에서 몇 번째> <파이썬 식>: 그 이벤트 e 에 대해 식이 참이어야 한다
+  python3 -I -c 'import json, sys
+e = json.loads(open(sys.argv[1], encoding="utf-8").read().splitlines()[-int(sys.argv[2])])
+assert eval(sys.argv[3]), e' "$ev" "$1" "$2" 2>/dev/null || { why="이벤트(뒤 $1번째) 조건 불일치: $2 / $(tail -n "$1" "$ev" | head -n 1)"; return 1; }
+}
+gate() {  # gate <훅 JSON>: 프로젝트 폴더로 gate 를 부른다. $out $rc
+  rc=0; out=$(cd "$d" && printf '%s' "$1" | "${BASH:-bash}" "$phase" gate "$d" 2>&1) || rc=$?
+}
+
+t_h_ask() {  # 결정 요청은 단위를 결정 대기로 멈추고, 답하면 같은 호출에서 풀린다
+  mkcase; gok move U1 build || return 1
+  php ask U1 --question "어느 쪽?" --recommend A --impact "U2 지연" --option A --option B; okc "ask" || return 1
+  eq "$(last)" "OK: D1 결정 요청 (U1 멈춤)" "출력" || return 1
+  evt 2 'e["type"] == "decision.ask" and e["unit"] == "U1" and e["data"] == {"id": "D1", "question": "어느 쪽?", "recommend": "A", "impact": "U2 지연", "options": ["A", "B"]}' || return 1
+  evt 1 'e["type"] == "unit.halt" and e["data"] == {"reason": "decision", "decision": "D1"}' || return 1
+  php show; has "$out" "| U1 | 구현 | 결정 대기 |" "show" || return 1
+  php move U1 verify; refc "결정 대기 중 전환" || return 1
+  php answer D1 --answer A --undo "B 로 다시 묻는다"; okc "answer" || return 1
+  eq "$(last)" "OK: D1 답 기록 (U1 재개)" "출력" || return 1
+  evt 2 'e["type"] == "decision.answer" and e["data"] == {"id": "D1", "answer": "A", "by": "user", "undo": "B 로 다시 묻는다"}' || return 1
+  evt 1 'e["type"] == "unit.resume" and e["unit"] == "U1"' || return 1
+  gok move U1 verify || return 1
+  gok ask U1 --question q2 && gok ask U1 --question q3 || return 1  # 결정이 둘이면 뒤의 결정이 멈춤을 잡는다
+  php answer D2 --answer a; okc "D2 답" || return 1
+  eq "$(last)" "OK: D2 답 기록" "D3 이 남아 풀리지 않는다" || return 1
+  php show; has "$out" "| U1 | 검증 | 결정 대기 |" "아직 멈춤" || return 1
+  php answer D3 --answer a; eq "$(last)" "OK: D3 답 기록 (U1 재개)" "D3 답" || return 1
+}
+
+t_h_nounit() {  # 단위 없는 결정(-)은 멈춤 이벤트를 쓰지 않는다. --by 로 정한 쪽을 적는다
+  mkcase
+  php ask - --question "이름은?"; okc "ask" || return 1
+  eq "$(nev)" 1 "이벤트 줄 수" || return 1
+  evt 1 'e["unit"] == "-" and e["data"] == {"id": "D1", "question": "이름은?", "options": []}' || return 1
+  php answer D1 --answer x --by planner; okc "answer" || return 1
+  eq "$(nev)" 2 "이벤트 줄 수(재개 없음)" || return 1
+  evt 1 'e["data"]["by"] == "planner" and e["unit"] == "-"' || return 1
+}
+
+t_h_refuse() {  # 없는 ID·중복 답·닫힌 지시는 거부(이벤트 없음). 빠진 인자는 사용 오류
+  mkcase
+  php answer D1 --answer x; refc "없는 결정" || return 1
+  php ask U9 --question q; refc "없는 단위" || return 1
+  php ask U1; eq "$rc" 2 "--question 없음" || return 1
+  php direct message; eq "$rc" 2 "message 의 --text 없음" || return 1
+  php direct reorder; eq "$rc" 2 "reorder 의 --text 없음" || return 1
+  php direct bogus; eq "$rc" 2 "모르는 지시" || return 1
+  php applied I1; refc "없는 지시" || return 1
+  eq "$(nev)" 0 "거부·사용 오류는 이벤트를 쓰지 않는다" || return 1
+  gok ask - --question q && gok answer D1 --answer a || return 1
+  php answer D1 --answer b; refc "중복 답" || return 1
+  has "$(last)" "이미 답한" "문구" || return 1
+  php answer D1 --answer b --by bogus; eq "$rc" 2 "모르는 --by" || return 1
+  gok direct message --text hi && gok applied I1 || return 1
+  local before; before=$(nev)
+  php applied I1; refc "이미 적용" || return 1
+  php rejected I1 --reason x; refc "닫힌 지시 거부" || return 1
+  php rejected I1; eq "$rc" 2 "--reason 없음" || return 1
+  eq "$(nev)" "$before" "이벤트 줄 수" || return 1
+  gok direct reorder --text "U3 먼저" && gok rejected I2 --reason "선행 때문" || return 1
+  evt 1 'e["type"] == "directive.rejected" and e["data"] == {"id": "I2", "reason": "선행 때문"}' || return 1
+}
+
+t_h_folder() {  # 폴더 모드: plan 은 -. ask(단위 -)·direct·show 는 되고 move·halt 는 사용 오류
+  mkcase
+  ph ask "$d" - --question q; okc "ask" || return 1
+  eq "$(last)" "OK: D1 결정 요청" "출력" || return 1
+  evt 1 'e["plan"] == "-" and e["unit"] == "-"' || return 1
+  ph ask "$d" U1 --question q; eq "$rc" 2 "폴더 모드의 단위 ask" || return 1
+  ph direct "$d" message --text hi; okc "direct" || return 1
+  eq "$(last)" "OK: I1 지시 접수 (message)" "출력" || return 1
+  evt 1 'e["type"] == "directive.received" and e["plan"] == "-" and e["data"] == {"id": "I1", "kind": "message", "text": "hi"}' || return 1
+  ph show "$d"; okc "show" || return 1
+  has "$out" "| D1 | - | - | q |" "show 결정" || return 1
+  has "$out" "| I1 | - | message | hi |" "show 지시" || return 1
+  ph move "$d" U1 build; eq "$rc" 2 "폴더 모드 move" || return 1
+  ph halt "$d" U1 decision; eq "$rc" 2 "폴더 모드 halt" || return 1
+  [ -f "$d/.mmcode/DECISIONS.md" ] || { why="DECISIONS.md 없음"; return 1; }
+  cmp -s "$h" "$d/orig.md" || { why="폴더 모드가 상태표를 바꿨다"; return 1; }
+}
+
+t_h_ids() {  # ID 는 계획을 넘어 이어진다. 답·적용은 원래 이벤트의 plan 으로 쓴다
+  local ho
+  mkcase; ho="$d/docs/relay/other"; mkh "$ho" "$(row U1 — 미착수)"; ho="$ho/HANDOFF.md"
+  php ask - --question a; eq "$(last)" "OK: D1 결정 요청" "demo" || return 1
+  ph ask "$d" - --question b; eq "$(last)" "OK: D2 결정 요청" "폴더" || return 1
+  ph ask "$ho" U1 --question c; eq "$(last)" "OK: D3 결정 요청 (U1 멈춤)" "other" || return 1
+  ph direct "$d" message --text x; eq "$(last)" "OK: I1 지시 접수 (message)" "폴더 지시" || return 1
+  php direct reorder --text y; eq "$(last)" "OK: I2 지시 접수 (reorder)" "demo 지시" || return 1
+  ph answer "$d" D1 --answer z; okc "폴더에서 demo 결정에 답" || return 1
+  evt 1 'e["type"] == "decision.answer" and e["plan"] == "demo" and e["data"]["id"] == "D1"' || return 1
+  ph answer "$d" D3 --answer z; okc "폴더에서 other 결정에 답" || return 1
+  evt 1 'e["type"] == "unit.resume" and e["plan"] == "other" and e["unit"] == "U1"' || return 1
+  ph applied "$ho" I2; okc "other 에서 demo 지시 적용" || return 1
+  evt 1 'e["type"] == "directive.applied" and e["plan"] == "demo"' || return 1
+}
+
+t_h_stopafter() {  # 단위 후 정지: 진행 중인 단위는 끝까지 가고, 다음 단위의 build 는 거부. 적용 기록은 한 번
+  mkcase; gok move U1 build || return 1
+  php direct stop-after; okc "direct" || return 1
+  gok move U1 verify && gok check U1 cmd -- true && gok move U1 review && gok commit U1 repo abc1234 && gok move U1 done || return 1
+  local before; before=$(nev)
+  php move U2 build; refc "다음 단위 build" || return 1
+  has "$(last)" "단위 후 정지 지시 I1" "문구" || return 1
+  eq "$(nev)" "$((before + 2))" "처음 거부는 이벤트 2줄" || return 1
+  evt 2 'e["type"] == "directive.applied" and e["data"] == {"id": "I1"}' || return 1
+  evt 1 'e["type"] == "unit.halt" and e["unit"] == "U2" and e["data"]["reason"] == "stop-after"' || return 1
+  eq "$(cell U2 11)" 보류 "U2 상태" || return 1
+  php move U2 build; refc "두 번째 거부" || return 1
+  php move U3 build; refc "다른 단위" || return 1
+  eq "$(nev)" "$((before + 2))" "두 번째부터는 이벤트를 쓰지 않는다" || return 1
+  mkh "$d/docs/relay/other" "$(row U1 — 미착수)"
+  ph move "$d/docs/relay/other/HANDOFF.md" U1 build; okc "다른 계획의 정지 지시는 이 계획을 막지 않는다" || return 1
+  ph show "$h" <&-; okc "stdin 이 닫혀 있어도 돈다" || return 1
+}
+
+t_h_resume() {  # direct resume 은 열린 정지 지시를 닫고 그 지시로 멈춘 단위를 푼다(폴더 모드에서도)
+  mkcase
+  gok direct stop-after || return 1
+  php move U1 build; refc "정지 지시" || return 1
+  php rejected I1 --reason x; refc "정지 지시는 거부할 수 없다" || return 1
+  has "$(last)" "거부할 수 없다" "문구" || return 1
+  ph direct "$d" resume; okc "resume" || return 1
+  eq "$(last)" "OK: I2 지시 접수 (resume, 닫음: I1)" "출력" || return 1
+  evt 2 'e["type"] == "directive.received" and e["data"] == {"id": "I2", "kind": "resume", "closes": ["I1"]}' || return 1
+  evt 1 'e["type"] == "unit.resume" and e["plan"] == "demo" and e["unit"] == "U1"' || return 1
+  gok move U1 build || return 1
+  eq "$(cell U1 11)" 진행 "U1 상태" || return 1
+  php show; lacks "$out" "열린 지시" "resume 지시는 접수가 곧 적용이다" || return 1
+  php applied I2; refc "resume 지시는 이미 닫혔다" || return 1
+}
+
+t_h_gate() {  # gate: 열린 즉시 중단은 종료 코드 2. phase.sh 명령·다른 터미널·resume 뒤·이벤트 파일 없음은 0
+  mkcase
+  gate '{"tool_name":"Edit","tool_input":{}}'; eq "$rc" 0 "이벤트 파일 없음" || return 1
+  [ ! -d "$d/.mmcode" ] || { why=".mmcode 를 만들었다"; return 1; }
+  gok direct interrupt || return 1
+  gate '{"tool_name":"Edit","tool_input":{"file_path":"x"}}'; eq "$rc" 2 "열린 interrupt" || return 1
+  has "$out" "I1" "안내" || return 1
+  has "$out" "resume" "안내" || return 1
+  gate '{"tool_name":"Bash","tool_input":{"command":"ls"}}'; eq "$rc" 2 "다른 Bash 명령" || return 1
+  eq "$(grep -c '"directive.applied"' "$ev")" 1 "적용 기록은 한 번" || return 1
+  gate '{"tool_name":"Bash","tool_input":{"command":"bash plugins/x/phase.sh show docs/HANDOFF.md"}}'; eq "$rc" 0 "phase.sh 명령" || return 1
+  gate 'not json'; eq "$rc" 0 "해석 실패는 막지 않는다" || return 1
+  gok direct resume || return 1
+  gate '{"tool_name":"Edit","tool_input":{}}'; eq "$rc" 0 "resume 뒤" || return 1
+  gok direct interrupt --terminal t9 || return 1
+  export HC_TERMINAL_ID=t1; gate '{"tool_name":"Edit","tool_input":{}}'; local r1=$rc
+  export HC_TERMINAL_ID=t9; gate '{"tool_name":"Edit","tool_input":{}}'; local r9=$rc
+  unset HC_TERMINAL_ID
+  eq "$r1" 0 "다른 터미널" || return 1
+  eq "$r9" 2 "지정 터미널" || return 1
+}
+
+t_h_decisions() {  # DECISIONS.md: 결정이 없으면 만들지 않는다. 열린 결정·답한 결정 표. 칸 안의 | 와 줄바꿈은 바꾼다
+  mkcase
+  gok show || return 1
+  [ ! -f "$d/.mmcode/DECISIONS.md" ] || { why="결정 없이 만들었다"; return 1; }
+  gok ask U1 --question "$(printf 'a|b\nc')" --recommend r --impact i --option x --option y || return 1
+  gok ask - --question q2 && gok answer D2 --answer ans --by planner --undo u || return 1
+  local f; f=$(cat "$d/.mmcode/DECISIONS.md")
+  has "$f" "## 열린 결정" "파일" || return 1
+  has "$f" "| ID | 계획 | 단위 | 질문 | 추천 | 영향 | 선택지 |" "열린 결정 머리글" || return 1
+  has "$f" '| D1 | demo | U1 | a\|b<br>c | r | i | x / y |' "열린 결정 행" || return 1
+  has "$f" "## 답한 결정" "파일" || return 1
+  has "$f" "| ID | 계획 | 단위 | 질문 | 답 | 정한 쪽 | 되돌리는 방법 |" "답한 결정 머리글" || return 1
+  has "$f" "| D2 | demo | - | q2 | ans | planner | u |" "답한 결정 행" || return 1
+  lacks "$f" "| D2 | demo | - | q2 | - |" "열린 결정에 D2" || return 1
+}
+
+t_h_show() {  # show 는 열린 결정·지시가 있을 때만 그 부분을 보여 준다
+  mkcase
+  php show; okc "show" || return 1
+  lacks "$out" "열린 결정" "빈 show" || return 1
+  lacks "$out" "열린 지시" "빈 show" || return 1
+  gok ask - --question q --recommend r && gok direct message --text hi && gok direct stop-after || return 1
+  php show; okc "show" || return 1
+  has "$out" "| U1 | 대기 | - | - |" "기존 표" || return 1
+  has "$out" "열린 결정" "결정 제목" || return 1
+  has "$out" "| D1 | demo | - | q | r |" "결정 행" || return 1
+  has "$out" "| I1 | demo | message | hi | - | - |" "지시 행" || return 1
+  has "$out" "| I2 | demo | stop-after | - | - | - |" "정지 지시 행" || return 1
+  gok applied I1 && gok answer D1 --answer a || return 1
+  php show; lacks "$out" "열린 결정" "답한 뒤" || return 1
+  lacks "$out" "| I1 |" "적용한 메시지" || return 1
+  has "$out" "| I2 | demo | stop-after |" "정지 지시는 resume 전까지 열려 있다" || return 1
+}
+
 run() { why=; if "t_$1"; then pass=$((pass + 1)); echo "PASS $1"; else fail=$((fail + 1)); echo "FAIL $1: ${why:-조건 불일치}"; fi; }
 t_handdone() {  # 보충: 이벤트 없이 손으로 `완료`라고 적은 선행 단위는 완료로 본다. `진행`은 아니다
   mkcase
@@ -462,6 +650,7 @@ t_handdone() {  # 보충: 이벤트 없이 손으로 `완료`라고 적은 선�
   php show; okc "show" || return 1
   has "$out" "| U1 | 완료 |" "show" || return 1
 }
-for t in cycle no_check fail_check no_commit prereq skip_back halt untouched ignored usage status manual handdone handguard reentry race newline plans g_ff g_ffcmd g_done g_done_mut g_rework g_high g_screen g_light g_unknown g_show g_status; do run "$t"; done
+for t in cycle no_check fail_check no_commit prereq skip_back halt untouched ignored usage status manual handdone handguard reentry race newline plans g_ff g_ffcmd g_done g_done_mut g_rework g_high g_screen g_light g_unknown g_show g_status \
+         h_ask h_nounit h_refuse h_folder h_ids h_stopafter h_resume h_gate h_decisions h_show; do run "$t"; done
 echo "시험 $((pass + fail))개 · 실패 ${fail}개"
 [ "$fail" -eq 0 ]

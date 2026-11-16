@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
-# relay phase: 단위의 단계 전환·검사 결과·커밋·멈춤을 이벤트 파일에 쓰고 HANDOFF.md 상태표를 다시 만든다.
-# 사용: phase.sh <하위 명령> <HANDOFF.md> [인자...]   (인자 없이 부르면 사용법이 나온다)
+# relay phase: 단위의 단계 전환·검사 결과·커밋·멈춤·결정·지시를 이벤트 파일에 쓰고 HANDOFF.md 상태표와 .mmcode/DECISIONS.md 를 다시 만든다.
+# 사용: phase.sh <하위 명령> <HANDOFF.md|프로젝트 폴더> [인자...]   (인자 없이 부르면 사용법이 나온다)
+# 폴더를 넘기면 plan 은 - 이고 ask(단위 -)·answer·direct·applied·rejected·gate·show 만 된다(relay 가 아닌 세션, codex·agy 용).
 # 종료 코드: 0 성공 · 1 거부 또는 검사 실패(stdout 마지막 줄 REFUSED: <이유> 또는 FAILED: <이유>) · 2 사용 오류
 # 이벤트 파일: <프로젝트>/.mmcode/events.jsonl (추가만 한다). 읽기·판정·추가·상태표 갱신은 .mmcode/.lock 을 잡고 한다.
 # check 의 명령 실행은 잠금 밖에서 돈다. 거부하면 이벤트를 쓰지 않는다.
+# 예외: 열린 단위 후 정지 지시로 move <단위> build 를 처음 거부할 때는 directive.applied 와 그 단위의 unit.halt 를 쓴다.
+# gate 는 도구 호출 전 훅용이다: 열린 즉시 중단 지시가 있으면 종료 코드 2. 이벤트 파일이 없거나 내부 오류면 0(막지 않는 쪽).
 # 상태표에 선택 열 `등급`(가벼움·일반·고위험)·`화면`(✔)이 있으면 등급별 증거(계획 3.4절)가 없을 때 전환을 거부한다. 열이 없으면 적용하지 않는다.
-# 근거: docs/plans/orchestration-plan.md 3.2~3.5절, 4.1절. 외부 의존 없음(bash + python3 + git).
+# 근거: docs/plans/orchestration-plan.md 3.2~3.5절, 4.1~4.2절, 4.4절. 외부 의존 없음(bash + python3 + git).
 set -euo pipefail
 command -v python3 >/dev/null 2>&1 || { echo "python3 이 없다" >&2; exit 2; }
 command -v git >/dev/null 2>&1 || { echo "git 이 없다" >&2; exit 2; }
+# 파이썬의 stdin 은 이 스크립트라서 원래 stdin(gate 의 훅 JSON)을 fd 3 으로 넘긴다. stdin 이 닫혀 있으면 /dev/null 을 준다.
+{ : <&0; } 2>/dev/null && exec 3<&0 || exec 3</dev/null
 exec python3 -I - "$@" <<'PY'
 import contextlib, fcntl, json, os, re, shlex, subprocess, sys, tempfile, traceback
 from datetime import datetime
 
-USAGE = '''사용: phase.sh <하위 명령> <HANDOFF.md> [인자...]
+USAGE = '''사용: phase.sh <하위 명령> <HANDOFF.md|프로젝트 폴더> [인자...]   (폴더는 ask·answer·direct·applied·rejected·gate·show 만)
   move <단위> <단계> [--reason <사유>]     단계: queued build verify review done
   check <단위> <종류> [--reason <사유>] [--evidence <경로>] [--pass|--fail] [-- <명령...>]
                                            종류: cmd(명령 필수) manual fail-first review mutation cross-review coverage ui-review
@@ -21,7 +26,16 @@ USAGE = '''사용: phase.sh <하위 명령> <HANDOFF.md> [인자...]
   commit <단위> <저장소> <해시|없음(변경 없음)>
   halt <단위> <값>                         값: decision stop-after interrupt blocked:<그 단위>
   resume <단위>
-  show                                     단위별 단계·멈춤·남은 증거 표, 상태표 다시 생성'''
+  ask <단위|-> --question <질문> [--recommend <추천>] [--impact <영향>] [--option <선택지>]...
+                                           결정 요청 D<n>. 단위가 있으면 그 단위를 decision 으로 멈춘다
+  answer <ID> --answer <답> [--by user|planner|cross-review] [--undo <되돌리는 방법>]
+                                           결정 답. 그 결정으로 멈춘 단위를 푼다
+  direct <message|stop-after|interrupt|reorder|resume> [--text <글>] [--terminal <주소>]
+                                           지시 접수 I<n>. message·reorder 는 --text 필수. resume 은 열린 정지·중단 지시를 닫는다
+  applied <ID> [--reason <글>]             지시 적용 기록
+  rejected <ID> --reason <글>              지시 거부 기록
+  gate                                     stdin 의 훅 JSON 을 읽고 열린 즉시 중단 지시가 있으면 종료 코드 2
+  show                                     단위별 단계·멈춤·남은 증거 표, 열린 결정·지시, 상태표와 DECISIONS.md 다시 생성'''
 
 NOCHANGE = '없음(변경 없음)'
 PHASES = ['queued', 'build', 'verify', 'review', 'done']
@@ -31,6 +45,9 @@ PHASE_KO = {'queued': '대기', 'build': '구현', 'verify': '검증', 'review':
 STATUS_KO = {'queued': '미착수', 'build': '진행', 'verify': '진행', 'review': '진행', 'done': '완료'}
 KINDS = ['cmd', 'manual', 'fail-first', 'review', 'mutation', 'cross-review', 'coverage', 'ui-review']
 HALTS = ['decision', 'stop-after', 'interrupt']
+DIRECTIVES = ['message', 'stop-after', 'interrupt', 'reorder', 'resume']
+DECIDERS = ['user', 'planner', 'cross-review']
+FOLDER_CMDS = ['ask', 'answer', 'direct', 'applied', 'rejected', 'gate', 'show']
 GRADES = ['가벼움', '일반', '고위험']
 NEED_COLS = ['단위', '상태', '종료 시각', '커밋']
 GITENV = {k: v for k, v in os.environ.items()
@@ -42,7 +59,9 @@ class Usage(Exception):
 
 
 class Refused(Exception):
-    pass
+    def __init__(self, msg, events=()):
+        super().__init__(msg)
+        self.events = list(events)  # 거부하면서도 쓸 이벤트(단위 후 정지의 첫 거부만)
 
 
 class Failed(Exception):
@@ -57,7 +76,7 @@ def read(p):
 def write_atomic(path, text):
     # 임시 파일에 다 쓴 뒤 교체한다. 줄바꿈 문자는 그대로 둔다.
     d = os.path.dirname(path)
-    mode = os.stat(path).st_mode & 0o777
+    mode = os.stat(path).st_mode & 0o777 if os.path.exists(path) else 0o644
     fd, tmp = tempfile.mkstemp(dir=d, prefix='.tmp-')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8', newline='') as f:
@@ -86,10 +105,13 @@ def cell_text(line, span):
 class Ctx:
     def __init__(self, path):
         self.hpath = os.path.realpath(path)
-        if not os.path.isfile(self.hpath):
+        if os.path.isdir(self.hpath):  # 폴더 모드: 상태표가 없고 plan 은 -
+            self.pdir, self.plan, self.hpath = self.hpath, '-', None
+        elif os.path.isfile(self.hpath):
+            self.pdir = os.path.dirname(self.hpath)
+            self.plan = os.path.basename(self.pdir)
+        else:
             raise Usage(f'인계 문서 없음: {path}')
-        self.pdir = os.path.dirname(self.hpath)
-        self.plan = os.path.basename(self.pdir)
         r = subprocess.run(['git', '-C', self.pdir, 'rev-parse', '--show-toplevel'],
                            capture_output=True, text=True, env=GITENV)
         if r.returncode:
@@ -122,8 +144,8 @@ def locked(c):
         os.close(fd)
 
 
-def load_events(c):
-    # 이 계획의 이벤트만, 파일 순서대로.
+def load_events(c, every=False):
+    # 이 계획의 이벤트만(every 면 모든 계획), 파일 순서대로.
     out = []
     try:
         f = open(c.events, encoding='utf-8')
@@ -138,15 +160,15 @@ def load_events(c):
                 e = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(e, dict) and e.get('plan') == c.plan:
+            if isinstance(e, dict) and (every or e.get('plan') == c.plan):
                 out.append(e)
     return out
 
 
-def append_event(c, etype, unit, data):
+def append_event(c, etype, unit, data, plan=None):
     actor = {k: os.environ.get(v) for k, v in
              (('terminal', 'HC_TERMINAL_ID'), ('harness', 'PHASE_HARNESS'), ('model', 'PHASE_MODEL'), ('effort', 'PHASE_EFFORT'))}
-    e = {'ts': datetime.now().astimezone().isoformat(timespec='seconds'), 'type': etype, 'plan': c.plan, 'unit': unit,
+    e = {'ts': datetime.now().astimezone().isoformat(timespec='seconds'), 'type': etype, 'plan': plan or c.plan, 'unit': unit,
          'actor': {k: v for k, v in actor.items() if v}, 'data': data}
     pre = ''
     try:
@@ -239,7 +261,7 @@ class Table:
 
 
 def unit_state(evs, unit):
-    s = {'n': 0, 'phase': 'queued', 'halt': None, 'checks': [], 'commits': [], 'done_ts': None, 'ff': None}
+    s = {'n': 0, 'phase': 'queued', 'halt': None, 'halt_d': {}, 'checks': [], 'commits': [], 'done_ts': None, 'ff': None}
     for e in evs:
         if e.get('unit') != unit:
             continue
@@ -261,9 +283,9 @@ def unit_state(evs, unit):
         elif t == 'unit.commit':
             s['commits'].append(d)
         elif t == 'unit.halt':
-            s['halt'] = d.get('reason') or 'halt'
+            s['halt'], s['halt_d'] = d.get('reason') or 'halt', d
         elif t == 'unit.resume':
-            s['halt'] = None
+            s['halt'], s['halt_d'] = None, {}
     return s
 
 
@@ -377,21 +399,122 @@ def require_unit(tbl, unit, evs):
 
 
 def transact(c, fn):
-    # 잠금 안에서 표와 이벤트를 읽고, fn 이 정한 이벤트를 쓰고, 상태표를 갱신한다. fn 이 None 을 주면 표 갱신만 한다.
+    # 잠금 안에서 표와 이벤트를 읽고, fn 이 정한 이벤트를 쓰고, 상태표와 DECISIONS.md 를 갱신한다.
+    # fn 은 None, (종류, 단위, data[, plan]) 하나, 또는 그 목록을 준다. 폴더 모드는 표가 없다(tbl None).
     with locked(c):
-        tbl = Table(c)
+        tbl = Table(c) if c.hpath else None
         evs = load_events(c)
-        res = fn(tbl, evs)
-        if res:
-            etype, unit, data = res
-            evs.append(append_event(c, etype, unit, data))
-        sync_table(tbl, evs)
+        refused = None
+        try:
+            res = fn(tbl, evs)
+        except Refused as r:
+            if not r.events:
+                raise
+            res, refused = r.events, r
+        for ev in [res] if isinstance(res, tuple) else res or []:
+            e = append_event(c, *ev)
+            if e['plan'] == c.plan:
+                evs.append(e)
+        if tbl:
+            sync_table(tbl, evs)
+        write_decisions(c, load_events(c, every=True))
+        if refused:
+            raise refused
         return tbl, evs
+
+
+def edata(e):
+    d = e.get('data')
+    return d if isinstance(d, dict) else {}
+
+
+def decisions(alls):
+    # 결정 ID -> {'ask': 요청 이벤트, 'answer': 답 이벤트 data 또는 None}
+    out = {}
+    for e in alls:
+        d = edata(e)
+        if e.get('type') == 'decision.ask' and d.get('id'):
+            out[d['id']] = {'ask': e, 'answer': None}
+        elif e.get('type') == 'decision.answer' and d.get('id') in out:
+            out[d['id']]['answer'] = d
+    return out
+
+
+def directives(alls):
+    # 지시 ID -> 상태. done: 적용·거부·resume 으로 닫혔다. active: 막는 지시(stop-after·interrupt)가 resume 으로 닫히기 전이다.
+    out = {}
+    for e in alls:
+        t, d = e.get('type'), edata(e)
+        if t == 'directive.received' and d.get('id'):
+            out[d['id']] = {'e': e, 'd': d, 'kind': d.get('kind'), 'plan': e.get('plan'),
+                            'applied': False, 'rejected': False, 'closed': False}
+            for x in d.get('closes') or []:
+                if x in out:
+                    out[x]['closed'] = True
+        elif t in ('directive.applied', 'directive.rejected') and d.get('id') in out:
+            out[d['id']]['applied' if t == 'directive.applied' else 'rejected'] = True
+    for x in out.values():
+        x['done'] = x['applied'] or x['rejected'] or x['closed'] or x['kind'] == 'resume'  # resume 은 접수가 곧 적용이다
+        x['active'] = x['kind'] in ('stop-after', 'interrupt') and not x['closed']
+    return out
+
+
+def relevant(x, plan):
+    # 폴더 모드(-)의 지시는 모든 계획에, 계획의 지시는 그 계획에만 걸린다.
+    return '-' in (x['plan'], plan) or x['plan'] == plan
+
+
+def next_id(prefix, ids):
+    return prefix + str(max([int(i[1:]) for i in ids if re.fullmatch(prefix + r'\d+', i)] or [0]) + 1)
+
+
+def mdcell(v):
+    v = '; '.join(v) if isinstance(v, list) else str(v or '')
+    return v.replace('\r', '').replace('|', '\\|').replace('\n', '<br>') or '-'
+
+
+def mdrow(vals):
+    return '| ' + ' | '.join(mdcell(v) for v in vals) + ' |'
+
+
+def write_decisions(c, alls):
+    # 결정 대기열 파일. 결정이 하나도 없으면 만들지 않는다.
+    ds = decisions(alls)
+    if not ds:
+        return
+    opn = [mdrow([i, x['ask'].get('plan'), x['ask'].get('unit'), d.get('question'), d.get('recommend'), d.get('impact'),
+                  ' / '.join(d.get('options') or [])])
+           for i, x in ds.items() if not x['answer'] for d in [edata(x['ask'])]]
+    ans = [mdrow([i, x['ask'].get('plan'), x['ask'].get('unit'), edata(x['ask']).get('question'), a.get('answer'), a.get('by'), a.get('undo')])
+           for i, x in ds.items() if x['answer'] for a in [x['answer']]]
+    lines = ['# 결정 대기열', '', 'phase.sh 가 .mmcode/events.jsonl 에서 만든다. 손으로 고치지 않는다.', '', '## 열린 결정', '']
+    lines += ['| ID | 계획 | 단위 | 질문 | 추천 | 영향 | 선택지 |', '|---|---|---|---|---|---|---|'] + opn if opn else ['- 없음']
+    lines += ['', '## 답한 결정', '']
+    lines += ['| ID | 계획 | 단위 | 질문 | 답 | 정한 쪽 | 되돌리는 방법 |', '|---|---|---|---|---|---|---|'] + ans if ans else ['- 없음']
+    path = os.path.join(c.mm, 'DECISIONS.md')
+    text = '\n'.join(lines) + '\n'
+    if not os.path.exists(path) or read(path) != text:
+        write_atomic(path, text)
 
 
 def need(rest, n, exact=True):
     if len(rest) < n or (exact and len(rest) > n):
         raise Usage(USAGE)
+
+
+def opts(args, single, multi=()):
+    # --키 값 쌍을 읽는다. 같은 단일 키를 두 번 주면 뒤의 값을 쓴다.
+    o, i = {}, 0
+    while i < len(args):
+        k = args[i]
+        if (k not in single and k not in multi) or i + 1 >= len(args):
+            raise Usage(f'알 수 없는 인자 또는 값 없음: {k}')
+        if k in multi:
+            o.setdefault(k, []).append(args[i + 1])
+        else:
+            o[k] = args[i + 1]
+        i += 2
+    return o
 
 
 def parse_reason(rest):
@@ -423,6 +546,14 @@ def cmd_move(c, rest):
         if (frm, to) in BACK and not reason:
             raise Refused(f'{frm}→{to} 되돌아가기는 --reason 이 필요하다')
         if frm == 'queued':
+            stops = [x for x in directives(load_events(c, every=True)).values()
+                     if x['kind'] == 'stop-after' and x['active'] and relevant(x, c.plan)]
+            if stops:
+                new = [('directive.applied', '-', {'id': x['d']['id']}, x['plan']) for x in stops if not x['applied']]
+                if new:
+                    new.append(('unit.halt', unit, {'reason': 'stop-after', 'directive': stops[0]['d']['id']}))
+                ids = ', '.join(x['d']['id'] for x in stops)
+                raise Refused(f'단위 후 정지 지시 {ids} 가 열려 있다. {unit} 을 시작하지 않는다. 계속하려면 사용자가 direct resume 을 실행한다', new)
             pre = [t for t in re.split(r'[,\s]+', tbl.text(row, '선행')) if t and t not in ('—', '-')]
             pend = [f'{p}({PHASE_KO[ph]})' for p in pre for ph in [known_phase(tbl, evs, p)] if ph != 'done']
             if pend:
@@ -573,22 +704,190 @@ def cmd_resume(c, rest):
 def cmd_show(c, rest):
     need(rest, 0)
     tbl, evs = transact(c, lambda tbl, evs: None)
-    print('| 단위 | 단계 | 멈춤 | 남은 증거 |')
-    print('|---|---|---|---|')
-    for row in tbl.rows:
-        u = tbl.text(row, '단위')
-        s = unit_state(evs, u)
-        ph = known_phase(tbl, evs, u)
-        rest_ev = ', '.join(remaining(tbl.grade(row), tbl.screen(row), ph, s)) or '-'
-        print(f'| {u} | {PHASE_KO[ph]} | {halt_ko(s["halt"])} | {rest_ev} |')
+    if tbl:
+        print('| 단위 | 단계 | 멈춤 | 남은 증거 |')
+        print('|---|---|---|---|')
+        for row in tbl.rows:
+            u = tbl.text(row, '단위')
+            s = unit_state(evs, u)
+            ph = known_phase(tbl, evs, u)
+            rest_ev = ', '.join(remaining(tbl.grade(row), tbl.screen(row), ph, s)) or '-'
+            print(f'| {u} | {PHASE_KO[ph]} | {halt_ko(s["halt"])} | {rest_ev} |')
+    alls = load_events(c, every=True)
+    opn = [mdrow([i, x['ask'].get('plan'), x['ask'].get('unit'), edata(x['ask']).get('question'), edata(x['ask']).get('recommend')])
+           for i, x in decisions(alls).items() if not x['answer']]
+    if opn:
+        print('\n열린 결정\n| ID | 계획 | 단위 | 질문 | 추천 |\n|---|---|---|---|---|\n' + '\n'.join(opn))
+    dirs = [mdrow([i, x['plan'], x['kind'], x['d'].get('text'), x['d'].get('terminal'), '적용됨' if x['applied'] else ''])
+            for i, x in directives(alls).items() if x['active'] or not x['done']]
+    if dirs:
+        print('\n열린 지시\n| ID | 계획 | 종류 | 내용 | 터미널 | 적용 |\n|---|---|---|---|---|---|\n' + '\n'.join(dirs))
 
 
-CMDS = {'move': cmd_move, 'check': cmd_check, 'commit': cmd_commit, 'halt': cmd_halt, 'resume': cmd_resume, 'show': cmd_show}
+def cmd_ask(c, rest):
+    need(rest, 1, exact=False)
+    unit = rest[0]
+    o = opts(rest[1:], ('--question', '--recommend', '--impact'), ('--option',))
+    if not o.get('--question'):
+        raise Usage('--question 이 필요하다')
+    if c.hpath is None and unit != '-':
+        raise Usage('폴더 모드의 ask 는 단위 - 만 된다')
+    out = {}
 
+    def fn(tbl, evs):
+        if unit != '-':
+            require_unit(tbl, unit, evs)
+        did = out['id'] = next_id('D', decisions(load_events(c, every=True)))
+        data = {'id': did, 'question': o['--question']}
+        data.update({k[2:]: o[k] for k in ('--recommend', '--impact') if o.get(k)})
+        data['options'] = o.get('--option', [])
+        res = [('decision.ask', unit, data)]
+        if unit != '-':
+            res.append(('unit.halt', unit, {'reason': 'decision', 'decision': did}))
+        return res
+
+    transact(c, fn)
+    print(f'OK: {out["id"]} 결정 요청' + (f' ({unit} 멈춤)' if unit != '-' else ''))
+
+
+def cmd_answer(c, rest):
+    need(rest, 1, exact=False)
+    did = rest[0]
+    o = opts(rest[1:], ('--answer', '--by', '--undo'))
+    if not o.get('--answer'):
+        raise Usage('--answer 가 필요하다')
+    by = o.get('--by', 'user')
+    if by not in DECIDERS:
+        raise Usage(f'--by 는 {" ".join(DECIDERS)} 중 하나다')
+    out = {}
+
+    def fn(tbl, evs):
+        alls = load_events(c, every=True)
+        x = decisions(alls).get(did)
+        if not x:
+            raise Refused(f'없는 결정: {did}')
+        if x['answer']:
+            raise Refused(f'{did} 는 이미 답한 결정이다')
+        plan, unit = x['ask'].get('plan'), x['ask'].get('unit')
+        data = {'id': did, 'answer': o['--answer'], 'by': by}
+        if o.get('--undo'):
+            data['undo'] = o['--undo']
+        res = [('decision.answer', unit, data, plan)]
+        hd = unit_state([e for e in alls if e.get('plan') == plan], unit)['halt_d']
+        if unit != '-' and hd.get('reason') == 'decision' and hd.get('decision') == did:
+            res.append(('unit.resume', unit, {}, plan))
+            out['unit'] = unit
+        return res
+
+    transact(c, fn)
+    print(f'OK: {did} 답 기록' + (f' ({out["unit"]} 재개)' if out.get('unit') else ''))
+
+
+def cmd_direct(c, rest):
+    need(rest, 1, exact=False)
+    kind = rest[0]
+    if kind not in DIRECTIVES:
+        raise Usage(f'지시는 {" ".join(DIRECTIVES)} 중 하나다')
+    o = opts(rest[1:], ('--text', '--terminal'))
+    if kind in ('message', 'reorder') and not o.get('--text'):
+        raise Usage(f'{kind} 는 --text 가 필요하다')
+    out = {}
+
+    def fn(tbl, evs):
+        alls = load_events(c, every=True)
+        ds = directives(alls)
+        iid = out['id'] = next_id('I', ds)
+        data = {'id': iid, 'kind': kind}
+        data.update({k[2:]: o[k] for k in ('--text', '--terminal') if o.get(k)})
+        res = [('directive.received', '-', data)]
+        if kind == 'resume':
+            closes = [i for i, x in ds.items() if x['active'] and relevant(x, c.plan)]
+            data['closes'] = out['closes'] = closes
+            seen = set()
+            for e in alls:  # 닫는 지시로 멈춘 단위를 푼다
+                d = edata(e)
+                key = (e.get('plan'), e.get('unit'))
+                if e.get('type') != 'unit.halt' or d.get('directive') not in closes or key in seen:
+                    continue
+                seen.add(key)
+                if unit_state([x for x in alls if x.get('plan') == key[0]], key[1])['halt_d'].get('directive') in closes:
+                    res.append(('unit.resume', key[1], {}, key[0]))
+        return res
+
+    transact(c, fn)
+    tail = f', 닫음: {", ".join(out["closes"])}' if out.get('closes') else ''
+    print(f'OK: {out["id"]} 지시 접수 ({kind}{tail})')
+
+
+def close_directive(c, rest, etype):
+    need(rest, 1, exact=False)
+    iid = rest[0]
+    o = opts(rest[1:], ('--reason',))
+    if etype == 'directive.rejected' and not o.get('--reason'):
+        raise Usage('rejected 는 --reason 이 필요하다')
+
+    def fn(tbl, evs):
+        x = directives(load_events(c, every=True)).get(iid)
+        if not x:
+            raise Refused(f'없는 지시: {iid}')
+        if etype == 'directive.rejected' and x['kind'] in ('stop-after', 'interrupt'):
+            raise Refused(f'{iid} 는 정지·중단 지시라 거부할 수 없다. 사용자가 direct resume 으로 푼다')
+        if x['done']:
+            raise Refused(f'{iid} 는 이미 닫힌 지시다')
+        data = {'id': iid}
+        if o.get('--reason'):
+            data['reason'] = o['--reason']
+        return 'directive.' + etype.split('.')[1], '-', data, x['plan']
+
+    transact(c, fn)
+    print(f'OK: {iid} ' + ('적용' if etype == 'directive.applied' else '거부') + ' 기록')
+
+
+def cmd_gate(c, rest):
+    # 훅 JSON 을 읽고 열린 즉시 중단 지시가 있으면 막는다. 이벤트 파일이 없으면 .mmcode 를 만들지 않고 통과.
+    need(rest, 0)
+    if not os.path.isfile(c.events):
+        return
+    with open(3, encoding='utf-8', closefd=False) as f:
+        j = json.loads(f.read())
+    cmd = (j.get('tool_input') or {}).get('command') or ''
+    if j.get('tool_name') == 'Bash' and 'phase.sh' in str(cmd):
+        return
+    me = os.environ.get('HC_TERMINAL_ID')
+    with locked(c):
+        hits = [x for x in directives(load_events(c, every=True)).values()
+                if x['kind'] == 'interrupt' and x['active'] and relevant(x, c.plan)
+                and (not x['d'].get('terminal') or x['d']['terminal'] == me)]
+        for x in hits:
+            if not x['applied']:
+                append_event(c, 'directive.applied', '-', {'id': x['d']['id']}, x['plan'])
+    if hits:
+        ids = ', '.join(x['d']['id'] for x in hits)
+        print(f'즉시 중단 지시 {ids} 가 열려 있다. 도구를 쓰지 말고 지금까지 한 일과 멈춘 지점을 사용자에게 보고한다. '
+              f'계속하려면 사용자가 phase.sh direct <HANDOFF.md 또는 프로젝트 폴더> resume 을 실행한다.', file=sys.stderr)
+        sys.exit(2)
+
+
+CMDS = {'move': cmd_move, 'check': cmd_check, 'commit': cmd_commit, 'halt': cmd_halt, 'resume': cmd_resume, 'show': cmd_show,
+        'ask': cmd_ask, 'answer': cmd_answer, 'direct': cmd_direct, 'gate': cmd_gate,
+        'applied': lambda c, rest: close_directive(c, rest, 'directive.applied'),
+        'rejected': lambda c, rest: close_directive(c, rest, 'directive.rejected')}
+
+if sys.argv[1:2] == ['gate']:
+    try:
+        if len(sys.argv) < 3:
+            raise Usage(USAGE)
+        cmd_gate(Ctx(sys.argv[2]), sys.argv[3:])
+    except Exception as e:  # 훅이 고장 나도 도구를 막지 않는다
+        print(f'phase.sh gate: {e}', file=sys.stderr)
+    sys.exit(0)
 try:
     if len(sys.argv) < 3 or sys.argv[1] not in CMDS:
         raise Usage(USAGE)
-    CMDS[sys.argv[1]](Ctx(sys.argv[2]), sys.argv[3:])
+    c = Ctx(sys.argv[2])
+    if c.hpath is None and sys.argv[1] not in FOLDER_CMDS:
+        raise Usage(f'폴더에는 {" ".join(FOLDER_CMDS)} 만 쓸 수 있다. 다른 명령은 HANDOFF.md 를 넘긴다')
+    CMDS[sys.argv[1]](c, sys.argv[3:])
 except Usage as e:
     print(e, file=sys.stderr)
     sys.exit(2)
