@@ -20,7 +20,7 @@
 | U4 | 사람: 결정과 지시 이벤트, 단위 후 정지, 즉시 중단, 계속 | relay/scripts/phase.sh, 훅 | U3 | sonnet | ✘ | sonnet | mmCode:plugins,tests | | 완료 | 2026-11-16 14:51 | mmCode aa5597d | 일반 | ✘ |
 | U5 | 화면: 모니터 조회와 지시 보내기(별도 세션) | docs/plans/monitor-plan.md | U2 | | ✘ | | | | 완료 | 2026-11-16 14:52 | 없음(변경 없음) | 가벼움 | ✘ |
 | U6 | 단위 자동이 같은 명령을 쓴다. 기록에서 재개. 계획 자동 | relay/scripts/eval-goal.sh, rules.md | U4 | opus | ✘ | opus | mmCode:plugins,tests | | 완료 | 2026-11-16 16:45 | mmCode 2672bae | 일반 | ✘ |
-| U7 | 실제 기능 3개 안팎으로 시범 | 이 저장소의 새 정적 화면(계획 12절) | U6 | | ✘ | | | | 진행 | | | 일반 | ✔ |
+| U7 | 실제 기능 3개 안팎으로 시범 | 이 저장소의 새 정적 화면(계획 12절) | U6 | | ✘ | | | | 완료 | 2026-11-16 16:50 | mmCode 4849b7c | 일반 | ✔ |
 
 상태 값: `미착수` / `진행` / `완료` / `보류` / `blocked`. U1은 phase.sh가 생기기 전에 끝나 손으로 적었다. U2부터는 phase.sh가 상태·종료 시각·커밋 칸을 쓴다.
 
