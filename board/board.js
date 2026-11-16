@@ -46,6 +46,33 @@
     return res;
   }
 
+  // 정본: phase.sh 의 directives. 열린 지시 = 막는 중이거나 닫히지 않은 지시. resume 지시는 나오지 않는다.
+  function reduceDirectives(events) {
+    var byId = new Map();
+    events.forEach(function (e) {
+      var d = isObj(e.data) ? e.data : {};
+      if (typeof d.id !== 'string' || !d.id) return;
+      if (e.type === 'directive.received') {
+        byId.set(d.id, { id: d.id, plan: str(e.plan) || '-', kind: str(d.kind), text: str(d.text), terminal: str(d.terminal),
+          applied: false, rejected: false, closed: false });
+        (Array.isArray(d.closes) ? d.closes : []).forEach(function (x) {
+          if (byId.has(x)) byId.get(x).closed = true;
+        });
+      } else if ((e.type === 'directive.applied' || e.type === 'directive.rejected') && byId.has(d.id)) {
+        byId.get(d.id)[e.type === 'directive.applied' ? 'applied' : 'rejected'] = true;
+      }
+    });
+    var out = [];
+    byId.forEach(function (x) {
+      var blocking = (x.kind === 'stop-after' || x.kind === 'interrupt') && !x.closed;
+      var done = x.applied || x.rejected || x.closed || x.kind === 'resume';
+      if (blocking || !done) {
+        out.push({ id: x.id, plan: x.plan, kind: x.kind, text: x.text, terminal: x.terminal, applied: x.applied, blocking: blocking });
+      }
+    });
+    return out;
+  }
+
   // 규칙의 정본: phase.sh 의 unit_state
   function reduce(events) {
     var plans = new Map();
@@ -74,7 +101,7 @@
         if (u.halt) halted.push({ plan: p.plan, unit: u.unit, halt: u.halt });
       });
     });
-    return { plans: out, halted: halted, decisions: reduceDecisions(events) };
+    return { plans: out, halted: halted, decisions: reduceDecisions(events), directives: reduceDirectives(events) };
   }
 
   // blocked:<단위> 의 뒤는 그 단위 자신의 이름이다
@@ -94,6 +121,8 @@
 
   // 선택지가 없는 결정에 보여 주는 글자. 따옴표가 없어서 그대로 붙여 넣으면 셸에서 실패한다.
   function answerTemplate(id) { return answerPrefix(id) + '<답>'; }
+
+  function resumeCommand() { return 'bash plugins/mmcode/skills/relay/scripts/phase.sh direct . resume'; }
 
   function summarize(halted) {
     if (!halted.length) return '';
@@ -137,20 +166,12 @@
 
   function whereText(d) { return '계획 ' + d.plan + (d.unit === '-' ? '' : ' · 단위 ' + d.unit); }
 
-  // 선택지 한 줄(글자와 복사 버튼). 명령 글자는 접어 두고, 복사에 실패하면 펼쳐서 고르게 한다.
-  function optionRow(parent, id, answer, recommended) {
-    var cmd = answerCommand(id, answer);
-    var opt = node('div', 'option');
-    var row = node('div', 'optrow');
-    var t = node('p', 'opt', answer);
-    if (recommended) t.appendChild(node('span', 'tag', '추천'));
+  // 복사 버튼, 결과 문구, 접힌 명령 글자. 복사에 실패하면 명령 글자를 펼쳐서 고르게 한다.
+  function cmdCopy(cmd) {
     var btn = node('button', 'btn', '명령 복사');
     btn.type = 'button';
     var msg = node('span', 'copied');
     msg.setAttribute('role', 'status');
-    row.appendChild(t);
-    row.appendChild(btn);
-    row.appendChild(msg);
     var det = node('details', 'cmddet');
     det.appendChild(node('summary', '', '명령 보기'));
     var pre = node('pre', 'cmd', cmd);
@@ -167,8 +188,21 @@
         setTimeout(function () { msg.textContent = ''; }, 2000);
       }, failed);
     });
+    return { btn: btn, msg: msg, det: det };
+  }
+
+  // 선택지 한 줄(글자와 복사 버튼)
+  function optionRow(parent, id, answer, recommended) {
+    var opt = node('div', 'option');
+    var row = node('div', 'optrow');
+    var t = node('p', 'opt', answer);
+    if (recommended) t.appendChild(node('span', 'tag', '추천'));
+    var c = cmdCopy(answerCommand(id, answer));
+    row.appendChild(t);
+    row.appendChild(c.btn);
+    row.appendChild(c.msg);
     opt.appendChild(row);
-    opt.appendChild(det);
+    opt.appendChild(c.det);
     parent.appendChild(opt);
   }
 
@@ -212,7 +246,55 @@
     }
   }
 
-  var api = { parse: parse, reduce: reduce, render: render, summarize: summarize, answerCommand: answerCommand, answerTemplate: answerTemplate, renderDecisions: renderDecisions };
+  var KIND_KO = { message: '메시지', reorder: '순서 변경' };
+  var BLOCK_KO = {
+    'stop-after': '단위 후 정지|지금 단위가 끝나면 다음 단위를 시작하지 않는다',
+    interrupt: '즉시 중단|에이전트의 도구 사용을 막는다',
+  };
+
+  function targetText(plan) { return plan === '-' ? '모든 계획' : '계획 ' + plan; }
+
+  // 막는 지시는 stopsEl 의 띠로, 막지 않는 지시는 receivedEl 의 접힌 목록으로 그린다. 없으면 구역을 만들지 않는다.
+  function renderDirectives(stopsEl, receivedEl, list) {
+    var blocking = list.filter(function (d) { return d.blocking; });
+    var others = list.filter(function (d) { return !d.blocking; });
+    stopsEl.textContent = '';
+    receivedEl.textContent = '';
+    stopsEl.hidden = !blocking.length;
+    receivedEl.hidden = !others.length;
+    if (blocking.length) {
+      stopsEl.appendChild(node('h2', '', '정지 지시'));
+      blocking.forEach(function (d) {
+        var parts = (BLOCK_KO[d.kind] || d.kind).split('|');
+        var line = parts[0] + ' ' + d.id + ' (' + targetText(d.plan) + ')' + (parts[1] ? ': ' + parts[1] : '');
+        if (d.terminal) line += ' · 터미널 ' + d.terminal;
+        if (d.applied) line += ' · 적용됨';
+        stopsEl.appendChild(node('p', '', line));
+      });
+      stopsEl.appendChild(node('p', '', '계속하려면 아래 명령을 터미널에서 실행한다. 이 명령은 정지 지시 ' + blocking.length + '개를 모두 푼다.'));
+      var c = cmdCopy(resumeCommand());
+      var row = node('div', 'optrow');
+      row.appendChild(c.btn);
+      row.appendChild(c.msg);
+      stopsEl.appendChild(row);
+      stopsEl.appendChild(c.det);
+    }
+    if (others.length) {
+      var det = node('details', 'answered');
+      det.appendChild(node('summary', '', '받은 지시 ' + others.length + '개'));
+      others.forEach(function (d) {
+        var it = node('div', 'adec');
+        it.appendChild(node('p', 'name', d.id + ' · ' + (KIND_KO[d.kind] || d.kind)));
+        it.appendChild(node('p', '', '내용: ' + d.text));
+        it.appendChild(node('p', '', '대상: ' + targetText(d.plan)));
+        it.appendChild(node('p', '', '상태: 접수됨. 아직 적용 전'));
+        det.appendChild(it);
+      });
+      receivedEl.appendChild(det);
+    }
+  }
+
+  var api = { parse: parse, reduce: reduce, render: render, summarize: summarize, answerCommand: answerCommand, answerTemplate: answerTemplate, resumeCommand: resumeCommand, renderDecisions: renderDecisions, renderDirectives: renderDirectives };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.board = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -136,3 +136,39 @@ test('선택지 없는 결정의 표시 문자열에는 따옴표로 감싼 <답
   assert.ok(t.endsWith('--answer <답>'), t);
   assert.ok(!t.includes("'"), t);
 });
+
+const recv = (plan, id, kind, extra = {}) => ({ type: 'directive.received', plan, unit: '-', data: { id, kind, ...extra } });
+const dapplied = (id) => ({ type: 'directive.applied', plan: '-', unit: '-', data: { id } });
+const drejected = (id) => ({ type: 'directive.rejected', plan: '-', unit: '-', data: { id, reason: '안 함' } });
+
+test('적용된 정지 지시는 resume 이 닫기 전까지 열려 있고 blocking 이다', () => {
+  const r = board.reduce([recv('a', 'I1', 'stop-after', { terminal: 't1' }), dapplied('I1')]);
+  assert.deepEqual(r.directives, [
+    { id: 'I1', plan: 'a', kind: 'stop-after', text: '', terminal: 't1', applied: true, blocking: true },
+  ]);
+});
+
+test('resume 이 닫은 지시는 사라지고 resume 지시 자신도 나오지 않는다', () => {
+  const r = board.reduce([
+    recv('a', 'I1', 'stop-after'), recv('a', 'I2', 'interrupt'), recv('a', 'I3', 'message', { text: '안녕' }),
+    recv('a', 'I4', 'resume', { closes: ['I1', 'I2'] }),
+  ]);
+  assert.deepEqual(r.directives.map((d) => d.id), ['I3']);
+});
+
+test('거부된 메시지와 적용된 메시지는 사라진다', () => {
+  const r = board.reduce([recv('a', 'I1', 'message', { text: 'x' }), recv('a', 'I2', 'message', { text: 'y' }), recv('a', 'I3', 'reorder', { text: 'z' }), drejected('I1'), dapplied('I2')]);
+  assert.deepEqual(r.directives.map((d) => d.id), ['I3']);
+  assert.equal(r.directives[0].blocking, false);
+  assert.equal(r.directives[0].applied, false);
+  assert.equal(r.directives[0].text, 'z');
+});
+
+test('열린 지시는 접수 순서를 지키고 plan - 은 그대로 나온다', () => {
+  const r = board.reduce([recv('-', 'I2', 'interrupt'), recv('a', 'I1', 'message', { text: 'm' })]);
+  assert.deepEqual(r.directives.map((d) => [d.id, d.plan]), [['I2', '-'], ['I1', 'a']]);
+});
+
+test('resumeCommand 는 모든 계획용 resume 명령이다', () => {
+  assert.equal(board.resumeCommand(), 'bash plugins/mmcode/skills/relay/scripts/phase.sh direct . resume');
+});

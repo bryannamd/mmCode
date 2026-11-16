@@ -15,8 +15,8 @@
 | 단위 | 내용 | 파일 | 선행 | 모델 | 병렬 | 검수 | pathspec | 가중치 | 상태 | 종료 시각 | 커밋 | 등급 | 화면 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | B1 | 단위 보드와 이벤트 파일 읽기 | board/index.html, board/board.js, board/board.test.mjs | — | sonnet | ✘ | opus | mmCode:board | 40 | 완료 | 2026-11-16 16:11 | mmCode 2a88eb5 | 일반 | ✔ |
-| B2 | 결정 대기열 | board/index.html, board/board.js, board/board.test.mjs | B1 | sonnet | ✘ | opus | mmCode:board | 30 | 진행 | | | 일반 | ✔ |
-| B3 | 열린 지시 | board/index.html, board/board.js, board/board.test.mjs | B2 | sonnet | ✘ | opus | mmCode:board | 30 | 미착수 | | | 일반 | ✔ |
+| B2 | 결정 대기열 | board/index.html, board/board.js, board/board.test.mjs | B1 | sonnet | ✘ | opus | mmCode:board | 30 | 완료 | 2026-11-16 16:27 | mmCode 6a737a7 | 일반 | ✔ |
+| B3 | 열린 지시 | board/index.html, board/board.js, board/board.test.mjs | B2 | sonnet | ✘ | opus | mmCode:board | 30 | 진행 | | | 일반 | ✔ |
 
 상태 값: `미착수` / `진행` / `완료` / `보류` / `blocked`. `phase.sh` 로 옮긴 단위의 상태·종료 시각·커밋 칸은 스크립트가 쓴다. 그 칸을 손으로 고치지 않는다.
 

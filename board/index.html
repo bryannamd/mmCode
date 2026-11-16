@@ -8,7 +8,7 @@
 :root {
   --bg: #fffdf4; --text: #232845; --sub: #4d5677; --line: #d9d6c4; --surface: #fffdf4;
   --btn-bg: #232845; --btn-text: #fffdf4; --focus: #232845;
-  --pink: #ff4f9a; --on-pink: #232845; --green: #3fc46f;
+  --ink: #232845; --paper: #fffdf4; --amber: #ffc23d; --pink: #ff4f9a; --on-pink: #232845; --green: #3fc46f;
   --font: "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
@@ -52,6 +52,13 @@ details[open] > summary::before { content: '▾'; }
 .answered summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .adec { border-top: 1px solid var(--line); padding: 8px 0; overflow-wrap: anywhere; }
 .adec p { margin: 0 0 4px; }
+.stops { background: var(--amber); color: var(--ink); border-radius: 8px; padding: 12px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.stops h2 { font-size: 16px; }
+.stops p { margin: 0 0 6px; }
+.stops .btn { background: var(--ink); color: var(--paper); }
+.stops .btn:focus-visible, .stops summary:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.stops .copied, .stops .cmddet summary { color: var(--ink); }
+.stops .cmd { background: var(--paper); color: var(--ink); border-color: var(--ink); }
 .error { border: 2px solid var(--pink); border-radius: 8px; padding: 12px; margin-bottom: 16px; }
 .error p { margin: 0 0 6px; }
 .plan { margin-bottom: 24px; }
@@ -77,11 +84,13 @@ details[open] > summary::before { content: '▾'; }
   <button class="btn" id="reload" type="button">다시 읽기</button>
   <label class="btn pick">파일 고르기<input id="file" type="file" accept=".jsonl,.json,.txt"></label>
 </div>
+<div id="stops" class="stops" hidden></div>
 <div id="decisions" hidden></div>
 <div id="alert" class="alert" role="status" hidden></div>
 <p id="source" class="note"></p>
 <div id="error" class="error" role="alert" hidden></div>
 <div id="out" aria-live="polite"></div>
+<div id="received" hidden></div>
 <div id="answered" hidden></div>
 <script src="board.js"></script>
 <script>
@@ -90,6 +99,8 @@ details[open] > summary::before { content: '▾'; }
   var out = document.getElementById('out');
   var err = document.getElementById('error');
   var decEl = document.getElementById('decisions');
+  var stopsEl = document.getElementById('stops');
+  var receivedEl = document.getElementById('received');
   var answeredEl = document.getElementById('answered');
   var alertEl = document.getElementById('alert');
   var source = document.getElementById('source');
@@ -109,11 +120,14 @@ details[open] > summary::before { content: '▾'; }
     source.textContent = '읽은 곳: ' + where + ' · ' + hhmm();
     board.render(out, r, p.skipped);
     board.renderDecisions(decEl, answeredEl, r.decisions);
+    board.renderDirectives(stopsEl, receivedEl, r.directives);
   }
 
   function fail(reason) {
     out.textContent = '';
     decEl.hidden = true;
+    stopsEl.hidden = true;
+    receivedEl.hidden = true;
     answeredEl.hidden = true;
     alertEl.hidden = true;
     source.textContent = '';
