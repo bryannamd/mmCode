@@ -71,3 +71,19 @@ private let lsJSON = """
     }
     #expect(throws: HcClient.HcError.forbidden("-x")) { try HcClient.read(address: "-x") }
 }
+
+@Test func slowCommandTimesOut() {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sleep")
+    p.arguments = ["5"]
+    let start = Date()
+    #expect(throws: HcClient.HcError.timedOut) { _ = try HcClient.run(process: p, timeout: 0.3) }
+    #expect(Date().timeIntervalSince(start) < 3)
+}
+
+@Test func fastCommandReturnsOutput() throws {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/echo")
+    p.arguments = ["ok"]
+    #expect(String(decoding: try HcClient.run(process: p, timeout: 5), as: UTF8.self) == "ok\n")
+}

@@ -70,6 +70,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func dataChanged() {
         panel.world = store.world; panel.hcMissing = store.hcMissing; panel.hcDown = store.hcDown; panel.loaded = store.loaded
         panel.noteSaid()
+        panel.recordsChanged()
         updateIcon()
         // 닫혀 있으면 그리지 않는다. 열 때 다시 그린다.
         if window.isVisible { panel.reload() }

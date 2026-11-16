@@ -110,38 +110,49 @@ private func ts(_ s: String) -> Date { ISO8601DateFormatter().date(from: s)! }
     #expect(r.plans[1].halts.isEmpty)
 }
 
-@Test func decisionsPaired() {
-    let p = EventLog.reduce(lines: fixture("decisions")).plans[0]
+// 확정 형식(phase.sh aa5597d). 계획 p와 폴더 기록(plan -)이 섞여 있다.
+@Test func decisionsFromConfirmedFormat() {
+    let r = EventLog.reduce(lines: Array(fixture("decisions").prefix(2)))
+    let d1 = r.plans[0].decisions[0]
+    #expect(d1.recommendation == "아니오" && d1.options == ["예", "아니오"] && d1.blocks == ["U3"] && d1.impact == "배포 지연")
+    #expect(d1.asker?.terminal == "t1" && d1.isOpen)
+    // 결정으로 멈춘 단위는 그 결정을 가리킨다.
+    #expect(r.plans[0].units.first { $0.id == "U3" }?.halt?.decision == "D1")
+
+    let all = EventLog.reduce(lines: fixture("decisions"))
+    let p = all.plans[0]
+    #expect(all.plans.map(\.plan) == ["p"], "폴더 기록은 다른 계획이 있으면 거기에 합친다")
     #expect(p.decisions.map(\.id) == ["D1", "D2"])
-    let d1 = p.decisions[0]
-    #expect(d1.question == "푸시할까요?")
-    #expect(d1.blocks == ["U3"])
-    #expect(d1.meanwhile == "U4 진행")
-    #expect(d1.asker?.terminal == "t1")
-    #expect(d1.answer == "아니오, 로컬만")  // id로 지정한 답이 나중에 와서 덮는다
-    // id 없는 답은 가장 오래된 열린 요청(D1)을 먼저 닫았다. 그 뒤 D2는 열려 있다.
-    #expect(p.decisions[1].isOpen)
-    #expect(p.openDecisions.map(\.id) == ["D2"])
-}
-
-@Test func answerWithoutIdClosesOldestOpen() {
-    let lines = Array(fixture("decisions").prefix(3))
-    let p = EventLog.reduce(lines: lines).plans[0]
     #expect(p.decisions[0].answer == "아니오")
-    #expect(p.decisions[1].isOpen)
+    #expect(p.decisions[1].recommendation == "그대로", "옛 키 recommendation도 읽는다")
+    #expect(p.decisions[1].blocks.isEmpty && p.openDecisions.map(\.id) == ["D2"])
+    #expect(all.skipped == 1, "없는 결정의 답")
 }
 
-@Test func directivesPaired() {
-    let p = EventLog.reduce(lines: fixture("decisions")).plans[0]
-    #expect(p.directives.map(\.id) == ["R1", "R2", "R3"])
-    // id 없는 applied(kind stop-after)는 가장 오래된 stop-after 접수 건(R1)에 붙는다.
-    #expect(p.directives[0].status == .applied)
-    // id로 지정한 거부(R2, message)는 사유와 함께 기록된다.
-    #expect(p.directives[1].kind == .message)
-    #expect(p.directives[1].status == .rejected)
-    #expect(p.directives[1].reason == "계획자가 거부")
-    // 두 번째 stop-after(R3)는 아직 접수 상태다. 맞는 접수 건이 없는 applied(reorder)는 건너뛴다.
-    #expect(p.directives[2].status == .received)
+@Test func stopsStayOpenUntilResume() {
+    let before = EventLog.reduce(lines: Array(fixture("decisions").prefix(12))).plans[0]
+    #expect(before.directives.map(\.id) == ["I1", "I2", "I3"])
+    let i1 = before.directives[0], i2 = before.directives[1], i3 = before.directives[2]
+    #expect(i1.status == .applied && i1.isOpen, "적용된 단위 후 정지도 계속 전까지 열려 있다")
+    #expect(i2.status == .rejected && !i2.isOpen && i2.reason == "계획자가 거부" && i2.terminal == "t2")
+    #expect(i3.status == .applied && i3.isOpen)
+    #expect(before.openStops.map(\.id) == ["I1", "I3"])
+    #expect(before.units.first { $0.id == "U4" }?.halt?.directive == "I1")
+
+    let after = EventLog.reduce(lines: fixture("decisions")).plans[0]
+    // 폴더의 계속(I4)이 계획 p의 즉시 중단(I3)도 닫는다.
+    #expect(after.directives.filter(\.closed).map(\.id) == ["I1", "I3"])
+    #expect(after.openStops.isEmpty)
+    let i4 = after.directives.last!
+    #expect(i4.kind == .resume && i4.status == .applied && !i4.isOpen, "계속은 접수가 곧 적용이다")
+    #expect(after.units.first { $0.id == "U4" }?.halt == nil)
+}
+
+@Test func folderOnlyPlanStays() {
+    let lines = fixture("decisions").filter { $0.contains(#""plan":"-""#) }
+    let r = EventLog.reduce(lines: lines)
+    #expect(r.plans.map(\.plan) == ["-"])
+    #expect(r.plans[0].decisions.map(\.id) == ["D2"])
 }
 
 @Test func sessionUpdatesActorOnly() {

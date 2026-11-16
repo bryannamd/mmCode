@@ -7,6 +7,7 @@ import MonitorScene
 // MARK: 지붕
 
 final class RoofView: FocusHost {
+    static let height: CGFloat = 28, hitHeight: CGFloat = 40
     let building = PanelButton(.nav, "건물", label: "건물 보기")
     let list = PanelButton(.nav, "목록", label: "목록 보기")
     let alert = PanelButton(.pill, "")
@@ -31,7 +32,7 @@ final class RoofView: FocusHost {
             demoRect = CGRect(x: right - w, y: 14 - 8, width: w, height: 16); right -= w + 8
         }
         place(list, right: right); right = list.frame.minX + 3 - 8
-        building.frame = CGRect(x: 8 - 3, y: 4 - 4, width: building.fitSize.width + 6, height: 40)
+        building.frame = CGRect(x: 8 - 3, y: 0, width: building.fitSize.width + 6, height: Self.hitHeight)
         building.visual = CGRect(x: 3, y: 4, width: building.fitSize.width, height: 20)
         nameX = building.frame.maxX - 3 + 8
         let cellsW = m.cells.isEmpty ? 0 : CGFloat(m.cells.count) * 13 - 3 + 8
@@ -53,14 +54,20 @@ final class RoofView: FocusHost {
 
     private func place(_ b: PanelButton, right: CGFloat) {
         let s = b.fitSize, y = (28 - s.height) / 2
-        // 클릭 영역은 위로 4px, 아래로 16px, 옆으로 3px 넓힌다.
-        b.frame = CGRect(x: right - s.width - 3, y: y - 4, width: s.width + 6, height: s.height + 20)
-        b.visual = CGRect(x: 3, y: 4, width: s.width, height: s.height)
+        // 클릭 영역은 높이 40px이고 옆으로 3px 넓힌다.
+        b.frame = CGRect(x: right - s.width - 3, y: 0, width: s.width + 6, height: Self.hitHeight)
+        b.visual = CGRect(x: 3, y: y, width: s.width, height: s.height)
         b.needsDisplay = true
     }
 
+    /// 지붕 아래로 내려온 띠에서는 버튼만 클릭을 받는다. 나머지는 장면으로 넘긴다.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let v = super.hitTest(point)
+        return v === self && convert(point, from: superview).y >= Self.height ? nil : v
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        Theme.ink.setFill(); bounds.fill()
+        Theme.ink.setFill(); CGRect(x: 0, y: 0, width: bounds.width, height: Self.height).fill()
         drawFocus()
         guard let m = model else { return }
         Line(m.title, Theme.jua(16), Theme.paper).draw(x: nameX, cy: 14, maxWidth: nameMax)
@@ -80,34 +87,41 @@ final class RoofView: FocusHost {
 // MARK: 지반
 
 struct GroundSpec {
-    struct Button { var label: String; var aria: String; var primary = false; var disabled = false; var close = false; var press: () -> Void }
+    /// `focus`: 지반에 초점이 있을 때 먼저 받을 버튼(예: 중단 확인의 "취소").
+    struct Button { var label: String; var aria: String; var primary = false; var disabled = false; var close = false; var focus = false; var press: () -> Void }
+    /// 한 줄 입력칸. 제목·설명 대신 이름표와 입력칸을 그린다. `id`가 바뀌면 글을 비우고 초점을 준다.
+    struct Field { var id: String; var label: String; var placeholder: String; var submit: (String) -> Void; var cancel: () -> Void }
     var turn: Bool
     var icon: GroundIcon
     var title: String
     var pill: String?
     var detail: String
     var buttons: [Button]
+    var field: Field?
 }
 
 final class GroundView: FocusHost {
     private var spec: GroundSpec?
-    private var buttons: [PanelButton] = []
+    private(set) var buttons: [PanelButton] = []
     private var textMax: CGFloat = 0
+    let input = InputBox()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         setAccessibilityElement(true); setAccessibilityRole(.group)
+        input.isHidden = true
+        addSubview(input)
     }
     required init?(coder: NSCoder) { nil }
 
     func update(_ g: GroundSpec) {
-        let hadFocus = buttons.contains { $0.isFocused }
+        let hadFocus = buttons.contains { $0.isFocused } || input.editing
         spec = g
         focusColor = g.turn ? Theme.ink : Theme.paper
         buttons.forEach { $0.removeFromSuperview() }
         buttons = g.buttons.map { s in
             let b = PanelButton(s.close ? .close : s.primary ? .primary : .outline, s.label, label: s.aria, onPress: s.press)
-            b.turn = g.turn; b.disabled = s.disabled
+            b.turn = g.turn; b.disabled = s.disabled; b.focus = s.focus
             return b
         }
         // 버튼은 오른쪽 끝(10px 여백)부터 8px 간격. 클릭 영역은 위아래 6px, 옆 2px 넓힌다.
@@ -120,10 +134,22 @@ final class GroundView: FocusHost {
             addSubview(b)
         }
         textMax = (buttons.isEmpty ? bounds.width - 10 : right + 8 - 10) - 56
-        setAccessibilityLabel("\(g.title). \(g.pill.map { $0 + ". " } ?? "")\(g.detail)")
-        if hadFocus, let f = buttons.first(where: { !$0.disabled }) { window?.makeFirstResponder(f) }
+        setAccessibilityLabel(g.field?.label ?? "\(g.title). \(g.pill.map { $0 + ". " } ?? "")\(g.detail)")
+        // 입력칸: 이름표(11px, 줄 높이 13.2)와 26px 칸을 1px 띄워 가운데에 모은다(시안 .g-text label·input).
+        if let f = g.field {
+            input.frame = CGRect(x: 56, y: 29 - 40.2 / 2 + 13.2 + 1, width: textMax, height: 26)
+            input.isHidden = false
+            input.show(f)
+        } else {
+            input.hide()
+        }
+        if input.fresh { input.fresh = false; window?.makeFirstResponder(input.field) }
+        else if hadFocus, !input.editing, let f = buttons.first(where: { $0.focus && !$0.disabled }) ?? buttons.first(where: { !$0.disabled }) { window?.makeFirstResponder(f) }
         needsDisplay = true
     }
+
+    /// 화면 찍기용. 이름이 같은 첫 버튼을 누른다.
+    func press(_ label: String) { buttons.first { $0.title == label && !$0.disabled }?.onPress() }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let g = spec else { return }
@@ -139,6 +165,10 @@ final class GroundView: FocusHost {
         NSGraphicsContext.restoreGraphicsState()
         let ring = NSBezierPath(ovalIn: c.insetBy(dx: 1, dy: 1)); ring.lineWidth = 2; (g.turn ? Theme.ink : Theme.paper).setStroke(); ring.stroke()
         // 글 두 줄: Jua 17(줄 높이 20.4)과 시스템 600 11(14.3). 두 줄을 가운데에 모은다.
+        if let f = g.field {
+            Line(f.label, Theme.body(11, .semibold), sub).draw(x: 56, cy: 29 - 40.2 / 2 + 6.6, maxWidth: textMax)
+            return
+        }
         let top = 29 - (20.4 + 14.3) / 2, title = Line(g.title, Theme.jua(17), fg)
         var titleMax = textMax
         if let p = g.pill { titleMax = max(60, textMax - Line(p, Theme.body(11, .semibold), .black).width - 21) }
@@ -151,6 +181,70 @@ final class GroundView: FocusHost {
             pl.draw(x: r.minX + 7.5, cy: r.midY, maxWidth: w - 15)
         }
         Line(g.detail, Theme.body(11, .semibold), sub).draw(x: 56, cy: top + 20.4 + 7.15, maxWidth: textMax)
+    }
+}
+
+/// 지반의 한 줄 입력칸. 종이색 칸(모서리 7px) 안에 테두리 없는 NSTextField를 세로 가운데에 둔다.
+/// 리턴은 보내기, Esc는 닫기다. 글은 같은 입력칸(`id`)인 동안 남는다(자료가 바뀌어 다시 그려도 지워지지 않는다).
+final class InputBox: NSView, NSTextFieldDelegate {
+    let field = Field()
+    private var spec: GroundSpec.Field?
+    private(set) var id: String?
+    /// 새로 열렸다. GroundView가 초점을 준다.
+    var fresh = false
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        field.isBordered = false; field.drawsBackground = false; field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13); field.textColor = Theme.ink
+        field.cell?.usesSingleLineMode = true; field.cell?.isScrollable = true; field.cell?.wraps = false
+        field.delegate = self
+        field.onFocus = { [weak self] in self?.needsDisplay = true }
+        addSubview(field)
+    }
+    required init?(coder: NSCoder) { nil }
+    override var isFlipped: Bool { true }
+
+    var editing: Bool { field.currentEditor() != nil }
+
+    func show(_ f: GroundSpec.Field) {
+        spec = f
+        if id != f.id {
+            id = f.id; fresh = true
+            field.stringValue = ""
+            field.placeholderAttributedString = NSAttributedString(string: f.placeholder, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.paperSub])
+            field.setAccessibilityLabel(f.label)
+        }
+        let h = ceil(field.intrinsicContentSize.height)
+        field.frame = CGRect(x: 8, y: (bounds.height - h) / 2, width: bounds.width - 16, height: h)
+        needsDisplay = true
+    }
+
+    func hide() {
+        guard id != nil else { return }
+        let had = editing
+        id = nil; spec = nil; fresh = false; field.stringValue = ""
+        if had { window?.makeFirstResponder(nil) }  // 지반이 이어서 첫 버튼에 초점을 준다
+        isHidden = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        fillRound(bounds, 7, Theme.paper)
+        // 초점: 안쪽 2px ink-3 선(시안 outline-offset -2px).
+        if editing { fillRound(bounds, 7, nil, stroke: Theme.ink3) }
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
+        if sel == #selector(NSResponder.insertNewline(_:)) { spec?.submit(field.stringValue); return true }
+        if sel == #selector(NSResponder.cancelOperation(_:)) { spec?.cancel(); return true }
+        return false
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) { needsDisplay = true }
+
+    final class Field: NSTextField {
+        var onFocus: () -> Void = {}
+        override func becomeFirstResponder() -> Bool { defer { onFocus() }; return super.becomeFirstResponder() }
     }
 }
 

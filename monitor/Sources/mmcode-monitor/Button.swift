@@ -11,6 +11,8 @@ class PanelButton: NSView {
     var turn = false
     var on = false { didSet { needsDisplay = true } }
     var disabled = false
+    /// 지반에 초점이 있을 때 먼저 받는다.
+    var focus = false
     /// 보이는 영역. 클릭 영역(frame)보다 작을 수 있다.
     var visual: CGRect = .zero
     var onPress: () -> Void = {}

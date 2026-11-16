@@ -49,3 +49,28 @@ public final class FileWatcher {
         if !isFile, FileManager.default.fileExists(atPath: path) { onChange(); arm() }
     }
 }
+
+/// 여러 층의 기록 파일(`<루트>/.mmcode/events.jsonl`)을 지켜본다. 다른 층의 멈춤도 바로 알린다.
+/// 기록 폴더(`.mmcode`)가 없는 층은 보지 않는다. 그런 층까지 보면 프로젝트 폴더의 모든 파일 생성에 깨어난다.
+public final class LogWatchers {
+    private var watchers: [String: FileWatcher] = [:]
+    private let onChange: () -> Void
+
+    /// `onChange`는 감시자의 내부 큐에서 불린다.
+    public init(onChange: @escaping () -> Void) { self.onChange = onChange }
+
+    public var roots: Set<String> { Set(watchers.keys) }
+
+    /// 지금 보이는 층에 맞춘다. 사라진 층은 그만 보고, 새 층은 보기 시작한다.
+    public func sync(roots: [String]) {
+        let want = Set(roots.filter { FileManager.default.fileExists(atPath: $0 + "/.mmcode") })
+        for (r, w) in watchers where !want.contains(r) { w.stop(); watchers[r] = nil }
+        for r in want where watchers[r] == nil {
+            let w = FileWatcher(path: r + "/.mmcode/events.jsonl", onChange: onChange)
+            watchers[r] = w
+            w.start()
+        }
+    }
+
+    public func stopAll() { sync(roots: []) }
+}

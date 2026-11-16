@@ -19,7 +19,7 @@ final class Store {
     private let saveFloors: Bool
     private var known: [String] = []
     private var stream: HcClient.EventStream?
-    private var watcher: FileWatcher?
+    private lazy var watchers = LogWatchers { [weak self] in self?.q.async { self?.schedule() } }
     private var focusRoot: String?
     private var pending = false, stopped = false
 
@@ -35,7 +35,7 @@ final class Store {
     func start() { if demo == nil { q.async { self.launch() } } }
 
     /// 앱이 끝날 때 부른다. 이 객체가 띄운 스트림 프로세스만 끝낸다.
-    func stop() { q.sync { stopped = true; stream?.stop(); stream = nil; watcher?.stop(); watcher = nil } }
+    func stop() { q.sync { stopped = true; stream?.stop(); stream = nil; watchers.stopAll() } }
 
     /// 화면 밖 캡처용. 지금 바로 한 번 읽는다.
     func loadOnce(focus: String?) {
@@ -43,17 +43,12 @@ final class Store {
         q.sync { focusRoot = focus; if HcClient.locate() == nil { hcMissing = true } else { refresh(sync: true) } }
     }
 
-    /// 사무실로 보는 프로젝트의 기록 파일만 지켜본다.
+    /// 사무실로 보는 프로젝트를 정한다. 상태 문구(`hc get`)는 이 프로젝트 것만 읽는다.
     func setFocus(_ root: String?) {
         guard demo == nil else { return }
         q.async { [self] in
             guard root != focusRoot else { return }
             focusRoot = root
-            watcher?.stop(); watcher = nil
-            if let root, !stopped {
-                watcher = FileWatcher(path: root + "/.mmcode/events.jsonl") { [weak self] in self?.q.async { self?.schedule() } }
-                watcher?.start()
-            }
             schedule()
         }
     }
@@ -106,6 +101,8 @@ final class Store {
                 ordered[i].terminals[k].statusText = HcClient.statusText(of: ordered[i].terminals[k].address)
             }
         }
+        // 화면 밖 캡처(sync)는 한 번 읽고 끝나므로 지켜보지 않는다.
+        if !sync, !stopped { watchers.sync(roots: ordered.map(\.root)) }
         let w = World(projects: ordered)
         let apply = { self.world = w; self.loaded = true; self.hcMissing = false; self.hcDown = false; self.onChange() }
         if sync { world = w; loaded = true; hcDown = false } else { DispatchQueue.main.async(execute: apply) }

@@ -239,3 +239,80 @@ private func oneUnitWorld(_ unit: UnitState, status: AgentStatus = .working) -> 
     let w = oneUnitWorld(UnitState(id: "U1", phase: .verify, owner: Actor(terminal: "t1")))
     #expect(SceneBuilder.office(w, project: 0, night: false).scene.lamp == .run)
 }
+
+// MARK: 결정 선택지와 열린 지시
+
+private func decisionGround(_ d: Decision, halt: Halt? = nil, others: [Decision] = []) -> GroundModel {
+    let plan = PlanState(plan: "p", units: [UnitState(id: "U1", phase: .build, halt: halt)], decisions: others + [d], updated: t0)
+    return SceneBuilder.office(World(projects: [proj([term("a", "A")], plan)]), project: 0, night: false).ground
+}
+
+@Test func optionsBecomeButtons() {
+    Fonts.register()
+    let fit = decisionGround(Decision(id: "D1", question: "Q", recommendation: "아니오", options: ["예", "아니오"], ts: t0)).buttons
+    #expect(fit == [GroundButton("예", .answer(decision: "D1", text: "예")), GroundButton("아니오", .answer(decision: "D1", text: "아니오"), primary: true)])
+    // 다 들어가지 않으면 앞의 것만 두고 나머지는 "다르게 답하기"로 넣는다.
+    let long = ["첫째 선택지입니다", "둘째 선택지입니다", "셋째 선택지입니다"]
+    let some = decisionGround(Decision(id: "D1", question: "Q", recommendation: long[0], options: long, ts: t0)).buttons
+    #expect(some.map(\.label) == [long[0], "다르게 답하기"] && some[0].primary && some[1].action == .reply(decision: "D1"))
+    #expect(SceneBuilder.fits(some.map(\.label)) && !SceneBuilder.fits(long))
+    let none = decisionGround(Decision(id: "D1", question: "Q", options: [String(repeating: "아주 긴 선택지 ", count: 6)], ts: t0)).buttons
+    #expect(none == [GroundButton("다르게 답하기", .reply(decision: "D1"), primary: true)])
+}
+
+@Test func haltShowsItsOwnDecision() {
+    let d2 = Decision(id: "D2", question: "멈춘 단위의 질문", ts: t0)
+    let g = decisionGround(d2, halt: Halt(reason: "decision", unit: "U1", ts: t0, decision: "D2"), others: [Decision(id: "D1", question: "폴더 질문", ts: t0)])
+    #expect(g.title == "멈춘 단위의 질문")
+}
+
+@Test func openStopDirectives() {
+    func office(_ dirs: [Directive]) -> OfficeView {
+        let plan = PlanState(plan: "p", units: [UnitState(id: "U1", phase: .build)], directives: dirs, updated: t0)
+        return SceneBuilder.office(World(projects: [proj([term("a", "A", .claudeCode, .idle)], plan)]), project: 0, night: false)
+    }
+    let received = office([Directive(id: "I1", kind: .stopAfter, ts: t0)])
+    #expect(received.scene.stopSign && received.ground.detail == "이 단위를 마치면 멈춥니다")
+    #expect(received.ground.buttons.first == GroundButton("정지 접수됨", .stopAfter, disabled: true))
+    // 즉시 중단은 halt 없이 적용만 적힌다. 그래도 사용자 정지다.
+    let applied = office([Directive(id: "I1", kind: .interrupt, status: .applied, ts: t0)])
+    #expect(applied.ground.title == "사용자 정지 상태입니다" && applied.ground.detail.hasPrefix("즉시 중단을 적용했습니다"))
+    #expect(applied.scene.actors.allSatisfy { $0.pose == .stopped })
+    let closed = office([Directive(id: "I1", kind: .interrupt, status: .applied, closed: true, ts: t0), Directive(id: "I2", kind: .resume, status: .applied, ts: t0)])
+    #expect(!closed.scene.stopSign && closed.ground.title.hasPrefix("조용합니다"))
+}
+
+@Test func decisionsFromEveryPlan() {
+    func ev(_ ts: String, _ type: String, _ plan: String, _ unit: String, _ data: String) -> String {
+        #"{"ts":"2026-11-16T10:\#(ts):00+09:00","type":"\#(type)","plan":"\#(plan)","unit":"\#(unit)","data":\#(data)}"#
+    }
+    let plans = EventLog.reduce(lines: [
+        ev("00", "unit.phase", "A", "U1", #"{"from":"queued","to":"build"}"#),
+        ev("01", "decision.ask", "A", "U1", #"{"id":"D1","question":"A의 질문","options":[]}"#),
+        ev("01", "unit.halt", "A", "U1", #"{"reason":"decision","decision":"D1"}"#),
+        ev("02", "decision.ask", "-", "-", #"{"id":"D2","question":"폴더 질문","options":[]}"#),
+        ev("05", "unit.phase", "B", "U1", #"{"from":"queued","to":"build"}"#),
+        ev("06", "decision.ask", "B", "-", #"{"id":"D3","question":"B의 질문","options":[]}"#),
+    ]).plans
+    let p = proj([term("a", "A")], nil)
+    let w = World(projects: [Project(root: p.root, name: p.name, terminals: p.terminals, plans: plans)])
+    #expect(w.projects[0].activePlan?.plan == "B")
+    let v = SceneBuilder.office(w, project: 0, night: false)
+    // 보는 계획(B)이 아닌 A의 결정과 멈춘 단위가 먼저 나온다.
+    #expect(v.ground.title == "A의 질문" && v.ground.detail == "결정 대기. A 계획의 U1이 이 답을 기다립니다")
+    #expect(v.scene.bell)
+    #expect(v.list.sections.first { $0.title == "열린 결정" }?.rows.map(\.title) == ["D1", "D2", "D3"])
+    #expect(SceneBuilder.building(w, night: false).scene.floors[0].alert == .ask)
+}
+
+@Test func continueOnlyWhenDirectiveCanResume() {
+    let t = term("a", "A", .claudeCode, .idle)
+    func ground(_ plan: PlanState) -> GroundModel { SceneBuilder.office(World(projects: [proj([t], plan)]), project: 0, night: false).ground }
+    // 지시 연결 없는 손으로 쓴 정지는 resume으로 풀리지 않는다.
+    let hand = ground(PlanState(plan: "p", units: [UnitState(id: "U1", halt: Halt(reason: "stop-after", unit: "U1", ts: t0), owner: Actor(terminal: "a"))], updated: t0))
+    #expect(hand.buttons.isEmpty && hand.detail.hasSuffix("터미널 a에서 계속하세요"))
+    let linked = ground(PlanState(plan: "p", units: [UnitState(id: "U1", halt: Halt(reason: "stop-after", unit: "U1", ts: t0, directive: "I1"))], updated: t0))
+    #expect(linked.buttons.map(\.label) == ["계속"])
+    let env = ground(PlanState(plan: "p", halts: [Halt(reason: "limit:iterations", unit: nil, ts: t0)], updated: t0))
+    #expect(env.buttons.isEmpty && env.detail.hasSuffix("터미널 a에서 계속하세요"))
+}

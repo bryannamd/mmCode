@@ -7,6 +7,7 @@ public enum HcClient {
         case notFound
         case forbidden(String)
         case failed(Int32)
+        case timedOut
     }
 
     private static let readOnly: Set<String> = ["ls", "get", "events", "read"]
@@ -73,15 +74,33 @@ public enum HcClient {
         return p
     }
 
-    static func run(_ args: [String]) throws -> Data {
-        let p = try makeProcess(args)
+    static func run(_ args: [String]) throws -> Data { try run(process: makeProcess(args), timeout: 5) }
+
+    /// 시간 안에 끝나지 않으면 이 함수가 띄운 프로세스만 끝내고 `timedOut`을 던진다. hc가 멈춰도 갱신이 멈추지 않게 한다.
+    /// ponytail: SIGTERM만 보낸다. 그래도 안 끝나는 프로세스는 계속 기다린다. 그런 경우가 생기면 SIGKILL을 더한다.
+    static func run(process p: Process, timeout: TimeInterval) throws -> Data {
+        let r = try exec(process: p, timeout: timeout)
+        guard r.status == 0 else { throw HcError.failed(r.status) }
+        return r.out
+    }
+
+    /// `run`과 같지만 종료 코드와 상관없이 출력과 종료 코드를 돌려준다. `p.standardError`가 Pipe면 그것도 읽는다.
+    /// ponytail: stdout을 다 읽은 뒤 stderr를 읽는다. stderr가 파이프 한도(64KB)를 넘으면 시간 제한까지 기다린다.
+    static func exec(process p: Process, timeout: TimeInterval) throws -> (out: Data, err: Data, status: Int32) {
         let out = Pipe()
         p.standardOutput = out
         try p.run()
+        let lock = NSLock()
+        var late = false
+        let stop = DispatchWorkItem { lock.lock(); if p.isRunning { late = true; p.terminate() }; lock.unlock() }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
         let data = out.fileHandleForReading.readDataToEndOfFile()  // 대기 전에 읽어야 파이프가 막히지 않는다.
+        let err = (p.standardError as? Pipe)?.fileHandleForReading.readDataToEndOfFile() ?? Data()
         p.waitUntilExit()
-        guard p.terminationStatus == 0 else { throw HcError.failed(p.terminationStatus) }
-        return data
+        stop.cancel()
+        lock.lock(); let timedOut = late; lock.unlock()
+        if timedOut { throw HcError.timedOut }
+        return (data, err, p.terminationStatus)
     }
 
     // MARK: 스트림

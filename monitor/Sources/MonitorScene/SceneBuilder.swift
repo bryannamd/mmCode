@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import MonitorCore
 
@@ -55,11 +56,14 @@ public enum SceneBuilder {
 
     static func urgent(_ p: Project) -> Urgent? {
         let plan = p.hasEvents ? p.activePlan : nil
-        if let d = plan?.openDecisions.first { return .decision(d) }
-        // 결정 요청 이벤트 없이 멈춤만 있어도 결정 대기다(지금의 phase.sh가 그렇게 쓴다). 질문은 기록에 없다.
-        if let plan, let h = plan.allHalts.first(where: { $0.kind == .decision }) {
-            let owner = plan.units.first { $0.id == h.unit }?.owner
-            return .decision(Decision(id: "halt:\(h.unit ?? plan.plan)", question: "결정이 필요합니다", blocks: h.unit.map { [$0] } ?? [], asker: owner, ts: h.ts))
+        // 결정은 보는 계획만이 아니라 모든 계획에서 모은다. 단위를 멈춘 결정을 먼저 보인다.
+        let open = p.hasEvents ? p.openDecisions : [], halts = p.hasEvents ? p.decisionHalts : []
+        let linked = Set(halts.compactMap(\.halt.decision))
+        if let d = open.first(where: { linked.contains($0.id) }) ?? open.first { return .decision(d) }
+        // 결정 요청 기록 없이 멈춤만 있으면(손으로 쓴 halt) 질문을 모른다.
+        if let (pl, h) = halts.first {
+            let owner = p.plans.first { $0.plan == pl }?.units.first { $0.id == h.unit }?.owner
+            return .decision(Decision(id: "halt:\(h.unit ?? pl)", question: "결정이 필요합니다", blocks: h.unit.map { [$0] } ?? [], asker: owner, ts: h.ts))
         }
         if let plan, let h = plan.allHalts.first(where: { $0.kind == .unitBlocked }),
            let u = plan.units.first(where: { $0.id == (h.unit ?? String(h.reason.drop { $0 != ":" }.dropFirst())) }) {
@@ -73,8 +77,13 @@ public enum SceneBuilder {
         }
         if let t = errAgent { return .environment(text: "\(name(t))\(josa(name(t), "이", "가")) 오류로 멈췄습니다", agent: t, halt: nil) }
         if let t = p.agents.first(where: { $0.status == .blocked }) { return .input(t) }
-        if let h = plan?.allHalts.first(where: { $0.kind == .userStop }) { return .userStop(h) }
+        if let h = plan?.allHalts.first(where: { $0.kind == .userStop }) ?? plan.flatMap(appliedStop) { return .userStop(h) }
         return nil
+    }
+
+    /// 적용된 열린 정지·중단 지시. 즉시 중단은 halt 기록 없이 적용만 적히므로 지시에서 멈춤을 만든다.
+    static func appliedStop(_ plan: PlanState) -> Halt? {
+        plan.openStops.last { $0.status == .applied }.map { Halt(reason: $0.kind.rawValue, unit: nil, ts: $0.ts, directive: $0.id) }
     }
 
     static func envLabel(_ reason: String) -> String { reason.hasPrefix("limit") ? "한도 초과" : HaltClass.environment.label }
@@ -82,7 +91,7 @@ public enum SceneBuilder {
     // MARK: 캐릭터
 
     /// 탭 이름이 "1"처럼 숫자뿐이면 누구인지 알 수 없다. 그때는 스페이스 이름을 앞에 붙인다.
-    static func name(_ t: Terminal) -> String {
+    public static func name(_ t: Terminal) -> String {
         let tab = t.tabName
         if tab.isEmpty { return t.address }
         guard tab.allSatisfy(\.isNumber) else { return tab }
@@ -95,9 +104,9 @@ public enum SceneBuilder {
 
     static func actors(_ p: Project) -> [SceneActor] {
         let plan = p.hasEvents ? p.activePlan : nil
-        var askers = Set(plan?.openDecisions.compactMap { $0.asker?.terminal } ?? [])
+        var askers = Set((p.hasEvents ? p.openDecisions : []).compactMap { $0.asker?.terminal })
         if case .decision(let d)? = urgent(p), let t = d.asker?.terminal { askers.insert(t) }
-        let stopped = plan?.allHalts.contains { $0.kind == .userStop } ?? false
+        let stopped = plan.map { $0.allHalts.contains { $0.kind == .userStop } || appliedStop($0) != nil } ?? false
         return p.agents.map { t in
             let info = plan?.actors[t.address]
             let owns = plan?.units.contains { $0.owner?.terminal == t.address && $0.phase != .done } ?? false
@@ -177,7 +186,7 @@ public enum SceneBuilder {
             else if all.contains(where: { $0.id == u.owner?.terminal && $0.pose == .work }) { lamp = .run }
         }
         let halts = plan?.allHalts ?? []
-        let pendingStop = plan?.directives.contains { $0.status == .received && ($0.kind == .stopAfter || $0.kind == .interrupt) } ?? false
+        let pendingStop = !(plan?.openStops.isEmpty ?? true)
 
         let blockedOwners = Set(units.filter { $0.halt?.kind == .unitBlocked }.compactMap { $0.owner?.terminal })
         var bubbles: [Bubble] = [], hits: [HitTarget] = []
@@ -197,7 +206,7 @@ public enum SceneBuilder {
         }
 
         let scene = OfficeScene(
-            night: night, actors: seated, boxes: boxes, lamp: lamp, bell: !(plan?.openDecisions.isEmpty ?? true) || halts.contains { $0.kind == .decision },
+            night: night, actors: seated, boxes: boxes, lamp: lamp, bell: { if case .decision? = urgent(p) { true } else { false } }(),
             stopSign: halts.contains { $0.kind == .userStop } || pendingStop, officeError: halts.contains { $0.kind == .environment },
             hiddenActors: all.count - seated.count, hiddenBoxes: units.count - boxes.count,
             labels: OfficeLayout.rail.map { WallLabel(text: $0.0, style: .stage, rect: CGRect(x: $0.1, y: 22, width: 0, height: 0)) },
@@ -244,11 +253,9 @@ public enum SceneBuilder {
         switch urgent(p) {
         case .decision(let d):
             let blocks = d.blocks.enumerated().map { $0.offset < d.blocks.count - 1 ? $0.element + josa($0.element, "과", "와") : $0.element }.joined(separator: " ")
-            let small = "결정 대기" + (blocks.isEmpty ? "" : ". \(blocks)\(josa(blocks, "이", "가")) 이 답을 기다립니다")
-            // 결정의 선택지가 모델에 없어 권고안 하나와 직접 답하기를 둔다.
-            let btns = d.recommendation.map { [GroundButton($0, .answer(decision: d.id, text: $0), primary: true), GroundButton("다르게 답하기", .reply(decision: d.id))] }
-                ?? [GroundButton("답하기", .reply(decision: d.id), primary: true)]
-            return GroundModel(turn: true, floor: pi, icon: face(all, d.asker?.terminal) ?? .bell, title: d.question, detail: small, buttons: btns)
+            let other = decisionPlan(p, d).map { "\($0) 계획의 " } ?? ""
+            let small = "결정 대기" + (blocks.isEmpty ? "" : ". \(other)\(blocks)\(josa(blocks, "이", "가")) 이 답을 기다립니다")
+            return GroundModel(turn: true, floor: pi, icon: face(all, d.asker?.terminal) ?? .bell, title: d.question, detail: small, buttons: answerButtons(d))
         case .unitBlocked(let u, let h):
             let who = ownerName(p, u)
             return GroundModel(turn: true, floor: pi, icon: .box(number: u.number, done: false), title: "\(u.id) 단위 막힘",
@@ -256,19 +263,20 @@ public enum SceneBuilder {
                                buttons: u.owner?.terminal.map { [GroundButton("\(who)에게 메시지", .message(terminal: $0), primary: true)] } ?? [])
         case .environment(let text, let t, let h):
             return GroundModel(turn: true, floor: pi, icon: face(all, t?.address) ?? .bell, title: text,
-                               detail: h.map { "환경·한도. \($0.reason)" } ?? (t?.statusText ?? "환경·한도"),
-                               buttons: h == nil ? [] : [GroundButton("계속", .resume, primary: true)])
+                               detail: h.map { "환경·한도. \($0.reason). \(resumeHint(p, $0))" } ?? (t?.statusText ?? "환경·한도"), buttons: [])
         case .input(let t):
             let n = name(t)
             return GroundModel(turn: true, floor: pi, icon: face(all, t.address) ?? .bell, title: "\(n)\(josa(n, "이", "가")) 터미널에서 입력을 기다립니다",
                                detail: t.statusText ?? t.location, buttons: [])
         case .userStop(let h):
             let tail = h.reason == "interrupt" ? ". 미완료 변경은 지우지 않았습니다" : ". 다음 단위를 시작하지 않습니다"
-            return GroundModel(turn: false, floor: pi, icon: .stop, title: "사용자 정지 상태입니다", detail: stopDetail(h) + tail,
-                               buttons: [GroundButton("계속", .resume, primary: true)])
+            let can = resumable(plan, h)
+            return GroundModel(turn: false, floor: pi, icon: .stop, title: "사용자 정지 상태입니다", detail: stopDetail(h) + (can ? tail : ". " + resumeHint(p, h)),
+                               buttons: can ? [GroundButton("계속", .resume, primary: true)] : [])
         case nil:
             let elseAlert = roof(world, office: pi).alert != nil
-            let dirs = plan?.directives.filter { $0.status == .received } ?? []
+            // 여기 오면 열린 정지·중단은 모두 접수만 된 것이다(적용되면 사용자 정지).
+            let dirs = plan?.openStops ?? []
             let stopReq = dirs.contains { $0.kind == .stopAfter }
             let active = plan?.units.first { [.build, .verify, .review].contains($0.phase) }
             let small = dirs.contains { $0.kind == .interrupt } ? "즉시 중단을 접수했습니다"
@@ -278,6 +286,53 @@ public enum SceneBuilder {
             let btns = plan == nil ? [] : [GroundButton(stopReq ? "정지 접수됨" : "단위 후 정지", .stopAfter, disabled: stopReq), GroundButton("중단", .interrupt)]
             return GroundModel(turn: false, floor: pi, icon: .bell, title: elseAlert ? "이 층은 조용합니다" : "조용합니다. " + calm(all), detail: small, buttons: btns)
         }
+    }
+
+    /// 결정으로 멈춘 단위가 보는 계획이 아닌 계획에 있으면 그 계획 값. 같은 계획이거나 모르면 nil.
+    static func decisionPlan(_ p: Project, _ d: Decision) -> String? {
+        let at = p.decisionHalts.first { $0.halt.decision == d.id || "halt:\($0.halt.unit ?? $0.plan)" == d.id }?.plan
+            ?? p.plans.first { pl in pl.decisions.contains { $0.id == d.id } && pl.units.contains { d.blocks.contains($0.id) } }?.plan
+        guard let at, at != p.activePlan?.plan else { return nil }
+        return at
+    }
+
+    /// "계속"(direct resume)은 지시로 건 멈춤만 푼다. 지시 연결이 있거나 열린 정지·중단 지시가 있을 때만 버튼을 둔다.
+    static func resumable(_ plan: PlanState?, _ h: Halt) -> Bool {
+        h.directive != nil || !(plan?.openStops.isEmpty ?? true)
+    }
+
+    /// 앱이 풀 수 없는 멈춤의 안내. 단위 담당자, 없으면 첫 에이전트의 터미널.
+    static func resumeHint(_ p: Project, _ h: Halt) -> String {
+        let t = p.plans.lazy.compactMap { $0.units.first { $0.id == h.unit }?.owner?.terminal }.first ?? p.agents.first?.address
+        return "\(t.map { "터미널 \($0)" } ?? "터미널")에서 계속하세요"
+    }
+
+    /// 결정 답 버튼. 선택지가 있으면 선택지를, 없으면 추천안을 버튼으로 둔다. 추천안 버튼이 주된 버튼이다.
+    /// 지반에 다 들어가지 않는 선택지는 "다르게 답하기"로 넣는다.
+    static func answerButtons(_ d: Decision) -> [GroundButton] {
+        let reply = GroundButton("다르게 답하기", .reply(decision: d.id))
+        func pick(_ s: String) -> GroundButton { GroundButton(s, .answer(decision: d.id, text: s), primary: s == d.recommendation) }
+        guard !d.options.isEmpty else {
+            return d.recommendation.map { [pick($0), reply] } ?? [GroundButton("답하기", .reply(decision: d.id), primary: true)]
+        }
+        if fits(d.options) { return d.options.map(pick) }
+        var kept = d.options
+        while !kept.isEmpty, !fits(kept + [reply.label]) { kept.removeLast() }
+        return kept.isEmpty ? [GroundButton(reply.label, reply.action, primary: true)] : kept.map(pick) + [reply]
+    }
+
+    /// 지반 버튼 줄의 폭 한도. 지반 480px에서 오른쪽 여백 10, 얼굴 칸과 글 시작(56), 글 칸 최소 150을 뺀 값이다.
+    /// 버튼 하나는 Jua 14 글자 폭 + 28(최소 40)이고 버튼 사이는 8px이다(Parts.swift GroundView).
+    static let buttonRowMax: Double = 480 - 10 - 56 - 150 - 10 + 8
+
+    static func fits(_ labels: [String]) -> Bool {
+        labels.reduce(0) { $0 + buttonWidth($1) + 8 } <= buttonRowMax
+    }
+
+    static func buttonWidth(_ s: String) -> Double {
+        let font = CTFontCreateWithName(Fonts.jua as CFString, 14, nil)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: s, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
+        return max(40, ceil(CTLineGetTypographicBounds(line, nil, nil, nil)) + 28)
     }
 
     private static let NUM = ["", "하나", "둘", "셋", "넷", "다섯"]
@@ -303,13 +358,13 @@ public enum SceneBuilder {
         }
         var sections = [ListSection(title: "담당자", wide: false, rows: agents)]
         guard let plan else { return ListModel(sections: sections) }
-        let planStop = plan.halts.first { $0.kind == .userStop }
+        let planStop = plan.halts.first { $0.kind == .userStop } ?? appliedStop(plan)
         let units = plan.units.map { u -> ListRow in
             var why: String?
             if u.phase != .done {
                 if let h = u.halt { why = h.kind.label }
                 else if planStop != nil { why = HaltClass.userStop.label }
-                else if plan.openDecisions.contains(where: { $0.blocks.contains(u.id) }) { why = HaltClass.decision.label }
+                else if p.openDecisions.contains(where: { $0.blocks.contains(u.id) }) { why = HaltClass.decision.label }
             }
             // 값이 있는 증거만 종류 순서대로 적는다.
             let ev = EvidenceKind.allCases.compactMap { k in u.latest(k).map { "\(k.label) \(result($0))" } }.joined(separator: ", ")
@@ -317,8 +372,17 @@ public enum SceneBuilder {
                            meta: ev.isEmpty ? nil : ev)
         }
         sections.append(ListSection(title: "단위", wide: false, rows: units))
+        // 열린 결정은 계획과 상관없이 모두 적는다. 다른 계획의 결정은 계획 값을 붙인다.
+        let open = p.openDecisions
+        if !open.isEmpty {
+            sections.append(ListSection(title: "열린 결정", wide: true, rows: open.map { d in
+                ListRow(face: nil, title: d.id, subtitle: d.question, tags: [ListTag(text: HaltClass.decision.label, style: .turn)],
+                        meta: ([decisionPlan(p, d).map { "\($0) 계획" }, d.blocks.isEmpty ? nil : d.blocks.joined(separator: ", ") + " 멈춤", d.recommendation.map { "추천: " + $0 }]
+                            .compactMap { $0 }.joined(separator: ". ")).nilIfEmpty)
+            }))
+        }
         let dirs = plan.directives.reversed().prefix(8).map { d in
-            ListRow(face: nil, title: d.kind.label, subtitle: d.text, tags: [ListTag(text: d.status.label, style: .plain)], meta: d.reason)
+            ListRow(face: nil, title: d.kind.label, subtitle: d.text, tags: [ListTag(text: d.closed ? "풀림" : d.status.label, style: .plain)], meta: d.reason)
         }
         sections.append(ListSection(title: "지시 기록", wide: true, rows: dirs.isEmpty ? [ListRow(face: nil, title: "아직 보낸 지시가 없습니다", subtitle: nil, tags: [], meta: nil)] : Array(dirs)))
         return ListModel(sections: sections)
@@ -376,7 +440,9 @@ public enum SceneBuilder {
             let n = name(t)
             return GroundModel(turn: true, floor: i, icon: face(people, t.address) ?? .bell, title: title, detail: "\(n)\(josa(n, "이", "가")) 터미널에서 입력을 기다립니다", buttons: go)
         case .userStop(let h):
-            return GroundModel(turn: false, floor: i, icon: .stop, title: title, detail: stopDetail(h), buttons: [GroundButton("계속", .resume, primary: true)])
+            let can = resumable(p.hasEvents ? p.activePlan : nil, h)
+            return GroundModel(turn: false, floor: i, icon: .stop, title: title, detail: stopDetail(h) + (can ? "" : ". " + resumeHint(p, h)),
+                               buttons: can ? [GroundButton("계속", .resume, primary: true)] : [])
         }
     }
 
@@ -410,4 +476,8 @@ public enum SceneBuilder {
         if a == "으로" && rieul { return b }
         return final ? a : b
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

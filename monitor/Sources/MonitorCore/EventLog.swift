@@ -23,10 +23,13 @@ public enum EventLog {
         var r = Result()
         var order: [String] = []
         var plans: [String: PlanState] = [:]
+        // 계속 지시가 닫은 지시 ID. 다른 계획의 지시도 닫으므로 끝에서 한 번에 적용한다(ID는 파일 전체에서 하나다).
+        var closed = Set<String>()
         for line in lines {
             let text = line.trimmingCharacters(in: .whitespaces)
             if text.isEmpty { continue }
             guard let e = Event(line: text) else { r.skipped += 1; continue }
+            if e.type == "directive.received" { closed.formUnion(e.data["closes"] as? [String] ?? []) }
             // 꺼내서 고친 뒤 다시 넣는다. 사본을 만들면 이벤트마다 배열을 복사하게 된다.
             let isNew = plans[e.plan] == nil
             var p = plans.removeValue(forKey: e.plan) ?? PlanState(plan: e.plan)
@@ -37,6 +40,19 @@ public enum EventLog {
             }
             if ok { r.processed += 1 } else { r.skipped += 1 }
         }
+        for id in order {
+            for i in plans[id]!.directives.indices where closed.contains(plans[id]!.directives[i].id) { plans[id]!.directives[i].closed = true }
+        }
+        // 폴더에서 쓴 결정과 지시(plan `-`)는 그 프로젝트의 모든 계획에 걸린다. 다른 계획이 있으면 거기에 합치고 `-`는 뺀다.
+        // 그래서 화면 쪽은 계획 하나만 보면 된다.
+        if let dash = plans[folderPlan], order.count > 1 {
+            order.removeAll { $0 == folderPlan }
+            for id in order {
+                plans[id]!.decisions = (plans[id]!.decisions + dash.decisions).sorted { $0.ts < $1.ts }
+                plans[id]!.directives = (plans[id]!.directives + dash.directives).sorted { $0.ts < $1.ts }
+                plans[id]!.actors.merge(dash.actors) { mine, _ in mine }
+            }
+        }
         r.plans = order.compactMap { id in
             guard var p = plans[id] else { return nil }
             p.units.sort { unitOrder($0.id) < unitOrder($1.id) }
@@ -44,6 +60,9 @@ public enum EventLog {
         }
         return r
     }
+
+    /// 폴더 모드(`phase.sh <하위 명령> <프로젝트 폴더>`)가 쓰는 계획 값.
+    public static let folderPlan = "-"
 
     // MARK: 줄 하나
 
@@ -104,7 +123,7 @@ public enum EventLog {
         case "unit.halt":
             guard let reason = str(d, "reason") else { return false }
             if Halt.isHalt(reason: reason) {
-                let halt = Halt(reason: reason, unit: haltUnit(reason, e.unit), ts: e.ts)
+                let halt = Halt(reason: reason, unit: haltUnit(reason, e.unit), ts: e.ts, decision: str(d, "decision"), directive: str(d, "directive"))
                 if let u = halt.unit {
                     p.units[unitIndex(u, &p)].halt = halt
                 } else {
@@ -126,39 +145,32 @@ public enum EventLog {
                 for i in p.units.indices where p.units[i].halt.map(matches) == true { p.units[i].halt = nil }
             }
 
-        // U4에서 형식이 정해지면 여기부터 "형식 미확정" 끝까지만 고친다. 지금은 제안 형식을 너그럽게 읽는다.
-        // MARK: 형식 미확정
+        // 결정과 지시. 쓰는 쪽: plugins/mmcode/skills/relay/scripts/phase.sh(ask·answer·direct·applied·rejected).
         case "decision.ask":
-            guard let q = str(d, "question") else { return false }
-            let id = str(d, "id") ?? "D\(p.decisions.count + 1)"
-            let blocks = (d["blocks"] as? [String]) ?? str(d, "blocks").map { [$0] } ?? []
-            let dec = Decision(id: id, question: q, recommendation: str(d, "recommendation"), impact: str(d, "impact"),
+            guard let id = str(d, "id"), let q = str(d, "question") else { return false }
+            // 막힌 단위는 요청의 단위다. 단위 `-`는 계획 전체의 질문이다.
+            let blocks = (d["blocks"] as? [String]) ?? e.unit.flatMap { $0 == "-" ? nil : [$0] } ?? []
+            let dec = Decision(id: id, question: q, recommendation: str(d, "recommend") ?? str(d, "recommendation"), impact: str(d, "impact"),
+                               options: (d["options"] as? [String] ?? []).filter { !$0.isEmpty },
                                blocks: blocks, meanwhile: str(d, "meanwhile"), asker: e.actor, ts: e.ts)
             if let i = p.decisions.firstIndex(where: { $0.id == id }) { p.decisions[i] = dec } else { p.decisions.append(dec) }
 
         case "decision.answer":
-            guard let answer = str(d, "answer") else { return false }
-            // id가 없으면 가장 오래된 열린 요청을 닫는다.
-            let i = str(d, "id").map { id in p.decisions.firstIndex { $0.id == id } } ?? p.decisions.firstIndex { $0.isOpen }
-            guard let i else { return false }
+            guard let id = str(d, "id"), let answer = str(d, "answer"), let i = p.decisions.firstIndex(where: { $0.id == id }) else { return false }
             p.decisions[i].answer = answer
 
         case "directive.received":
-            guard let kind = str(d, "kind").flatMap(DirectiveKind.init(rawValue:)) else { return false }
-            let id = str(d, "id") ?? "R\(p.directives.count + 1)"
-            let dir = Directive(id: id, kind: kind, text: str(d, "text"), status: .received, reason: nil, ts: e.ts)
+            guard let id = str(d, "id"), let kind = str(d, "kind").flatMap(DirectiveKind.init(rawValue:)) else { return false }
+            // 계속은 접수가 곧 적용이다.
+            let dir = Directive(id: id, kind: kind, text: str(d, "text"), status: kind == .resume ? .applied : .received, terminal: str(d, "terminal"), ts: e.ts)
             if let i = p.directives.firstIndex(where: { $0.id == id }) { p.directives[i] = dir } else { p.directives.append(dir) }
 
         case "directive.applied", "directive.rejected":
-            let status: DirectiveStatus = e.type == "directive.applied" ? .applied : .rejected
-            let kind = str(d, "kind").flatMap(DirectiveKind.init(rawValue:))
-            // id가 없으면 같은 kind의 가장 오래된 접수 건에 적용한다.
-            let i = str(d, "id").map { id in p.directives.firstIndex { $0.id == id } }
-                ?? kind.flatMap { k in p.directives.firstIndex { $0.kind == k && $0.status == .received } }
-            guard let i else { return false }
-            p.directives[i].status = status
+            guard let id = str(d, "id"), let i = p.directives.firstIndex(where: { $0.id == id }) else { return false }
+            p.directives[i].status = e.type == "directive.applied" ? .applied : .rejected
             p.directives[i].reason = str(d, "reason")
 
+        // 아래 둘은 phase.sh가 아직 쓰지 않는다. 해가 없어 남겨 둔다.
         case "plan.approve":
             // units: ["U1", …] 또는 [{id, title}]. 승인된 단위는 대기로 만든다.
             for raw in d["units"] as? [Any] ?? [] {
@@ -170,7 +182,6 @@ public enum EventLog {
 
         case "session.start", "session.stop":
             break  // 행위자 갱신만 한다(아래).
-        // MARK: 형식 미확정 끝
 
         default:
             return false

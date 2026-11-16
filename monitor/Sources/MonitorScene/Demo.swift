@@ -72,7 +72,7 @@ public enum Demo: String, CaseIterable, Sendable {
         case .decision:
             terms.remove(at: 1); terms[0].status = .idle; terms[0].statusText = "정본을 옮길지 묻는 중"
             plan.units = [u1, u2, u3Done] + rest
-            plan.decisions = [Decision(id: "D1", question: "정본을 이벤트 파일로 옮길까요?", recommendation: "옮긴다", blocks: ["U4", "U5"], asker: main, ts: at(95))]
+            plan.decisions = [Decision(id: "D1", question: "정본을 이벤트 파일로 옮길까요?", recommendation: "옮긴다", options: ["옮긴다", "그대로 둔다"], blocks: ["U4", "U5"], asker: main, ts: at(95))]
         case .stopped:
             terms.remove(at: 1); terms[0].status = .idle; terms[0].statusText = nil
             plan.units = [u1, u2, u3Done] + rest

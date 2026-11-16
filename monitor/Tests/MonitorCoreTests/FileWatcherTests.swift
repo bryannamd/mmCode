@@ -58,3 +58,30 @@ private final class Counter: @unchecked Sendable {
     try Data("x\n".utf8).write(to: URL(fileURLWithPath: path))
     #expect(!c.wait(0.5))
 }
+
+@Test func watchesEveryFloorThatHasLogFolder() throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("lw-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: base) }
+    let a = base.appendingPathComponent("a").path, b = base.appendingPathComponent("b").path, plain = base.appendingPathComponent("plain").path
+    for r in [a, b] { try FileManager.default.createDirectory(atPath: r + "/.mmcode", withIntermediateDirectories: true) }
+    try FileManager.default.createDirectory(atPath: plain, withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: a + "/.mmcode/events.jsonl", contents: Data("a\n".utf8))
+
+    let c = Counter()
+    let w = LogWatchers(onChange: c.hit)
+    defer { w.stopAll() }
+    w.sync(roots: [a, b, plain])
+    #expect(w.roots == [a, b])  // 기록 폴더가 없는 층은 보지 않는다
+    c.drain()
+
+    // 보고 있지 않은 층(사무실로 열지 않은 층)의 기록이 늘어도 알림이 온다.
+    let h = try FileHandle(forWritingTo: URL(fileURLWithPath: a + "/.mmcode/events.jsonl"))
+    h.seekToEndOfFile(); h.write(Data("b\n".utf8)); try h.close()
+    #expect(c.wait())
+    c.drain()
+    FileManager.default.createFile(atPath: b + "/.mmcode/events.jsonl", contents: Data("a\n".utf8))
+    #expect(c.wait())
+
+    w.sync(roots: [b])
+    #expect(w.roots == [b])
+}

@@ -57,11 +57,16 @@ public struct Halt: Equatable, Sendable {
     /// 이벤트의 `unit`. 계획 전체의 멈춤이면 nil.
     public var unit: String?
     public var ts: Date
+    /// 이 멈춤을 건 결정 요청(`data.decision`)과 지시(`data.directive`)의 ID.
+    public var decision: String?
+    public var directive: String?
 
-    public init(reason: String, unit: String?, ts: Date) {
+    public init(reason: String, unit: String?, ts: Date, decision: String? = nil, directive: String? = nil) {
         self.reason = reason
         self.unit = unit
         self.ts = ts
+        self.decision = decision
+        self.directive = directive
     }
 
     public var kind: HaltClass {
@@ -190,6 +195,8 @@ public struct Decision: Equatable, Sendable, Identifiable {
     public var question: String
     public var recommendation: String?
     public var impact: String?
+    /// 고를 수 있는 답. 없으면 비어 있다.
+    public var options: [String]
     /// 막힌 단위의 ID.
     public var blocks: [String]
     /// 그동안 가능한 작업.
@@ -199,11 +206,12 @@ public struct Decision: Equatable, Sendable, Identifiable {
     /// 답. nil이면 아직 열려 있다.
     public var answer: String?
 
-    public init(id: String, question: String, recommendation: String? = nil, impact: String? = nil, blocks: [String] = [], meanwhile: String? = nil, asker: Actor? = nil, ts: Date, answer: String? = nil) {
+    public init(id: String, question: String, recommendation: String? = nil, impact: String? = nil, options: [String] = [], blocks: [String] = [], meanwhile: String? = nil, asker: Actor? = nil, ts: Date, answer: String? = nil) {
         self.id = id
         self.question = question
         self.recommendation = recommendation
         self.impact = impact
+        self.options = options
         self.blocks = blocks
         self.meanwhile = meanwhile
         self.asker = asker
@@ -250,16 +258,35 @@ public struct Directive: Equatable, Sendable, Identifiable {
     public var status: DirectiveStatus
     /// 거부한 사유.
     public var reason: String?
+    /// 받을 터미널 주소(메시지).
+    public var terminal: String?
+    /// 계속(resume) 지시가 `closes`로 닫았다.
+    public var closed: Bool
     public var ts: Date
 
-    public init(id: String, kind: DirectiveKind, text: String? = nil, status: DirectiveStatus = .received, reason: String? = nil, ts: Date) {
+    public init(id: String, kind: DirectiveKind, text: String? = nil, status: DirectiveStatus = .received, reason: String? = nil, terminal: String? = nil, closed: Bool = false, ts: Date) {
         self.id = id
         self.kind = kind
         self.text = text
         self.status = status
         self.reason = reason
+        self.terminal = terminal
+        self.closed = closed
         self.ts = ts
     }
+
+    /// 정지·중단은 적용된 뒤에도 계속 지시가 닫을 때까지 열려 있다. 계속은 접수가 곧 적용이라 열리지 않는다.
+    /// 메시지·순서 변경은 적용이나 거부로 닫힌다.
+    public var isOpen: Bool {
+        switch kind {
+        case .stopAfter, .interrupt: return !closed
+        case .resume: return false
+        case .message, .reorder: return status == .received
+        }
+    }
+
+    /// 열린 정지·중단 지시인가.
+    public var isOpenStop: Bool { (kind == .stopAfter || kind == .interrupt) && isOpen }
 }
 
 // MARK: 계획, 터미널, 프로젝트
@@ -289,6 +316,9 @@ public struct PlanState: Equatable, Sendable {
     }
 
     public var openDecisions: [Decision] { decisions.filter { $0.isOpen } }
+
+    /// 열린 정지·중단 지시. 접수만 된 것과 적용된 것을 `status`로 나눈다.
+    public var openStops: [Directive] { directives.filter(\.isOpenStop) }
 
     /// 단위에 걸린 것과 계획 전체의 것을 합친 풀리지 않은 멈춤.
     public var allHalts: [Halt] { halts + units.compactMap { $0.halt } }
@@ -364,11 +394,24 @@ public struct Project: Equatable, Sendable, Identifiable {
     public var agents: [Terminal] { terminals.filter { $0.harness.isAgent } }
 
     /// 화면에 보여 줄 계획. 가장 최근에 이벤트가 있던 계획이다.
+    /// 폴더에서 쓴 기록(plan `-`)은 EventLog가 다른 계획에 합치므로 다른 계획이 있으면 여기에 없다.
     public var activePlan: PlanState? {
         plans.max { ($0.updated ?? .distantPast) < ($1.updated ?? .distantPast) }
     }
 
     public var hasEvents: Bool { !plans.isEmpty }
+
+    /// 모든 계획의 열린 결정. 계획과 상관없이 열린 결정은 모두 사용자 차례다(phase.sh show와 같다).
+    /// 폴더 결정은 계획마다 합쳐져 있으므로 ID로 중복을 없앤다.
+    public var openDecisions: [Decision] {
+        var seen = Set<String>()
+        return plans.flatMap(\.openDecisions).sorted { $0.ts < $1.ts }.filter { seen.insert($0.id).inserted }
+    }
+
+    /// 모든 계획의 결정 멈춤과 그 계획 값.
+    public var decisionHalts: [(plan: String, halt: Halt)] {
+        plans.flatMap { pl in pl.allHalts.filter { $0.kind == .decision }.map { (pl.plan, $0) } }
+    }
 }
 
 /// 모든 프로젝트. 순서는 층의 순서다. 한 번 정한 순서는 바꾸지 않는다.
