@@ -4,6 +4,7 @@
 # 종료 코드: 0 성공 · 1 거부 또는 검사 실패(stdout 마지막 줄 REFUSED: <이유> 또는 FAILED: <이유>) · 2 사용 오류
 # 이벤트 파일: <프로젝트>/.mmcode/events.jsonl (추가만 한다). 읽기·판정·추가·상태표 갱신은 .mmcode/.lock 을 잡고 한다.
 # check 의 명령 실행은 잠금 밖에서 돈다. 거부하면 이벤트를 쓰지 않는다.
+# 상태표에 선택 열 `등급`(가벼움·일반·고위험)·`화면`(✔)이 있으면 등급별 증거(계획 3.4절)가 없을 때 전환을 거부한다. 열이 없으면 적용하지 않는다.
 # 근거: docs/plans/orchestration-plan.md 3.2~3.5절, 4.1절. 외부 의존 없음(bash + python3 + git).
 set -euo pipefail
 command -v python3 >/dev/null 2>&1 || { echo "python3 이 없다" >&2; exit 2; }
@@ -16,10 +17,11 @@ USAGE = '''사용: phase.sh <하위 명령> <HANDOFF.md> [인자...]
   move <단위> <단계> [--reason <사유>]     단계: queued build verify review done
   check <단위> <종류> [--reason <사유>] [--evidence <경로>] [--pass|--fail] [-- <명령...>]
                                            종류: cmd(명령 필수) manual fail-first review mutation cross-review coverage ui-review
+                                           fail-first 는 명령이 실패(종료 코드 0 아님)해야 통과다. 명령 없는 면제는 --pass --reason "해당 없음: <이유>"(고위험은 거부)
   commit <단위> <저장소> <해시|없음(변경 없음)>
   halt <단위> <값>                         값: decision stop-after interrupt blocked:<그 단위>
   resume <단위>
-  show                                     단위별 단계와 멈춤 표, 상태표 다시 생성'''
+  show                                     단위별 단계·멈춤·남은 증거 표, 상태표 다시 생성'''
 
 NOCHANGE = '없음(변경 없음)'
 PHASES = ['queued', 'build', 'verify', 'review', 'done']
@@ -29,6 +31,7 @@ PHASE_KO = {'queued': '대기', 'build': '구현', 'verify': '검증', 'review':
 STATUS_KO = {'queued': '미착수', 'build': '진행', 'verify': '진행', 'review': '진행', 'done': '완료'}
 KINDS = ['cmd', 'manual', 'fail-first', 'review', 'mutation', 'cross-review', 'coverage', 'ui-review']
 HALTS = ['decision', 'stop-after', 'interrupt']
+GRADES = ['가벼움', '일반', '고위험']
 NEED_COLS = ['단위', '상태', '종료 시각', '커밋']
 GITENV = {k: v for k, v in os.environ.items()
           if k not in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX')}
@@ -197,6 +200,20 @@ class Table:
         i = self.cols.get(name)
         return cell_text(self.lines[li], sp[i]) if i is not None and i < len(sp) else ''
 
+    def grade(self, row):
+        # 등급 열이 없거나 칸이 비면 None(U2와 같은 동작). 모르는 값은 사용 오류.
+        t = self.text(row, '등급')
+        if t and t not in GRADES:
+            raise Usage(f'알 수 없는 등급: {t} ({" ".join(GRADES)})')
+        return t or None
+
+    def screen(self, row):
+        # 모르는 값(✓ 등)을 화면 없음으로 읽으면 ui-review 가 조용히 빠진다.
+        t = self.text(row, '화면')
+        if t not in ('', '✔', '✘', '-', '—'):
+            raise Usage(f'알 수 없는 화면 값: {t} (✔ 또는 ✘)')
+        return t == '✔'
+
     def units(self):
         return [self.text(r, '단위') for r in self.rows]
 
@@ -222,7 +239,7 @@ class Table:
 
 
 def unit_state(evs, unit):
-    s = {'n': 0, 'phase': 'queued', 'halt': None, 'checks': [], 'commits': [], 'done_ts': None}
+    s = {'n': 0, 'phase': 'queued', 'halt': None, 'checks': [], 'commits': [], 'done_ts': None, 'ff': None}
     for e in evs:
         if e.get('unit') != unit:
             continue
@@ -239,6 +256,8 @@ def unit_state(evs, unit):
                 s['done_ts'] = e.get('ts')
         elif t == 'check.result':
             s['checks'].append(d)
+            if d.get('kind') == 'fail-first':
+                s['ff'] = bool(d.get('pass'))  # 실패 먼저는 단위 기록 전체에서 가장 최근 결과를 본다
         elif t == 'unit.commit':
             s['commits'].append(d)
         elif t == 'unit.halt':
@@ -259,6 +278,49 @@ def known_phase(tbl, evs, unit):
     if not s['n'] and row is not None and tbl.text(row, '상태') == '완료':
         return 'done'
     return s['phase']
+
+
+def need_build(s):
+    return [] if s['ff'] is True else ['fail-first']
+
+
+def need_verify(g, checks):
+    kinds = ('cmd',) if g == '고위험' else ('cmd', 'manual')
+    if any(d.get('kind') in kinds and d.get('pass') for d in checks):
+        return []
+    return ['cmd'] if g == '고위험' else ['cmd 또는 manual']
+
+
+def need_done(g, screen, checks):
+    last = {}
+    for d in checks:
+        last[d.get('kind')] = bool(d.get('pass'))
+    kinds = ['review', 'mutation'] + (['cross-review'] if g == '고위험' else []) + (['ui-review'] if screen else [])
+    return [k for k in kinds if last.get(k) is not True]
+
+
+def missing(g, screen, frm, to, s):
+    # 이 전환에 빠진 증거 종류. 등급이 없거나 가벼움이면 없다.
+    if g in (None, '가벼움'):
+        return []
+    if (frm, to) == ('build', 'verify'):
+        return need_build(s)
+    if (frm, to) == ('verify', 'review'):
+        return need_verify(g, s['checks'])
+    if (frm, to) == ('review', 'done'):
+        return need_done(g, screen, s['checks'])
+    return []
+
+
+def remaining(g, screen, phase, s):
+    # 완료까지 빠진 증거 종류(show 용). 구현 이전 단계의 검사 결과는 검증 진입 때 비워지므로 세지 않는다.
+    if g in (None, '가벼움') or phase == 'done':
+        return []
+    cks = s['checks'] if phase in ('verify', 'review') else []
+    out = need_build(s) if phase in ('queued', 'build') else []
+    if phase != 'review':
+        out += need_verify(g, cks)
+    return out + need_done(g, screen, cks)
 
 
 def status_text(s):
@@ -350,6 +412,7 @@ def cmd_move(c, rest):
 
     def fn(tbl, evs):
         row = require_unit(tbl, unit, evs)
+        grade = tbl.grade(row)
         s = unit_state(evs, unit)
         frm = s['phase']
         if s['halt']:
@@ -375,6 +438,9 @@ def cmd_move(c, rest):
                 raise Refused('통과하지 못한 검사가 있다: ' + ', '.join(bad))
         elif frm == 'review' and to == 'done' and not s['commits']:
             raise Refused('구현 단계 진입 뒤의 커밋 기록이 없다')
+        miss = missing(grade, tbl.screen(row), frm, to, s)
+        if miss:
+            raise Refused(f'{unit} 에 빠진 증거: ' + ', '.join(miss))
         data = {'from': frm, 'to': to}
         if reason:
             data['reason'] = reason
@@ -436,13 +502,15 @@ def cmd_check(c, rest):
                 break
             except FileExistsError:
                 n += 1
+        started = True
         with f:
             try:
                 rc = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT).returncode
             except OSError as e:
                 f.write(f'{e}\n'.encode('utf-8'))
-                rc = 127
-        data.update({'pass': rc == 0, 'command': shlex.join(cmd), 'exit': rc})
+                rc, started = 127, False
+        ok = rc != 0 and started if kind == 'fail-first' else rc == 0  # 실패 먼저는 명령이 시작된 뒤 실패해야 통과다
+        data.update({'pass': ok, 'command': shlex.join(cmd), 'exit': rc})
     else:
         data['pass'] = flag == '--pass'
     if reason:
@@ -452,7 +520,9 @@ def cmd_check(c, rest):
     elif log:
         data['evidence'] = c.rel(log)
     def fn(tbl, evs):
-        require_unit(tbl, unit, evs)
+        row = require_unit(tbl, unit, evs)
+        if kind == 'fail-first' and not cmd and tbl.grade(row) == '고위험':
+            raise Refused('고위험 단위의 fail-first 는 명령이 필요하다')
         if count_phase(evs, unit) != phases0:
             raise Refused(f'검사 도중 {unit} 의 단계가 바뀌었다. 다시 돌린다')
         return 'check.result', unit, data
@@ -462,6 +532,8 @@ def cmd_check(c, rest):
     tail = f' (증거 {data["evidence"]})' if data.get('evidence') else ''
     if not data['pass']:
         why = f'종료 코드 {data["exit"]}' if cmd else reason
+        if kind == 'fail-first' and cmd:
+            why += ', 명령이 실패해야 통과다' if started else ', 명령을 시작하지 못했다'
         raise Failed(f'{kind} {why}{tail}')
     print(f'OK: {unit} {what}{tail}')
 
@@ -501,11 +573,14 @@ def cmd_resume(c, rest):
 def cmd_show(c, rest):
     need(rest, 0)
     tbl, evs = transact(c, lambda tbl, evs: None)
-    print('| 단위 | 단계 | 멈춤 |')
-    print('|---|---|---|')
-    for u in tbl.units():
+    print('| 단위 | 단계 | 멈춤 | 남은 증거 |')
+    print('|---|---|---|---|')
+    for row in tbl.rows:
+        u = tbl.text(row, '단위')
         s = unit_state(evs, u)
-        print(f'| {u} | {PHASE_KO[known_phase(tbl, evs, u)]} | {halt_ko(s["halt"])} |')
+        ph = known_phase(tbl, evs, u)
+        rest_ev = ', '.join(remaining(tbl.grade(row), tbl.screen(row), ph, s)) or '-'
+        print(f'| {u} | {PHASE_KO[ph]} | {halt_ko(s["halt"])} | {rest_ev} |')
 
 
 CMDS = {'move': cmd_move, 'check': cmd_check, 'commit': cmd_commit, 'halt': cmd_halt, 'resume': cmd_resume, 'show': cmd_show}

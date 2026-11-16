@@ -306,6 +306,152 @@ t_plans() {  # 계획 폴더가 둘이어도 서로 섞이지 않는다. U1 과 
   eq "$(grep -c '"plan": "other"' "$ev")" 1 "other 이벤트 수" || return 1
 }
 
+mkgrade() {  # mkgrade <등급> [<화면>]: 등급·화면 열이 중간·끝에 있는 상태표에 U1 하나
+  mkcase
+  {
+    printf '%s\n' '# HANDOFF demo' '' '## 상태표' '' \
+      '| 단위 | 내용 | 등급 | 파일 | 선행 | 모델 | 병렬 | 검수 | pathspec | 가중치 | 상태 | 종료 시각 | 커밋 | 화면 |' '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|' \
+      "| U1 | 내용U1 | $1 | f | — | sonnet | ✘ | sonnet | r:p | 30 | 미착수 | | | ${2:-✘} |" '' '## 진행률' '기준선: 10% (시험)'
+  } > "$h"
+}
+gok() { php "$@"; [ "$rc" = 0 ] || { why="실패: $* → $out"; return 1; }; }  # gok <하위 명령> <인자...>: 성공해야 한다
+g_to_review() {  # 실패 먼저, 구현→검증, cmd 통과, 검수까지
+  gok check U1 fail-first -- false && gok move U1 build && gok move U1 verify && gok check U1 cmd -- true && gok move U1 review
+}
+g_ev() { gok check U1 "$1" --pass --reason "$1 통과"; }
+
+t_g_ff() {  # 일반: 실패 먼저가 없으면 build→verify 거부. 빌드 단계에서 기록한 뒤에는 통과
+  mkgrade 일반
+  gok move U1 build || return 1
+  php move U1 verify; refc || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: fail-first" "거부 문구" || return 1
+  gok check U1 fail-first -- false || return 1
+  gok move U1 verify || return 1
+  g_ev review || return 1  # 검사 결과는 있지만 cmd·manual 이 아니다
+  php move U1 review; refc "검증 증거 없음" || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: cmd 또는 manual" "검증 거부 문구" || return 1
+  g_ev manual && gok move U1 review || return 1
+}
+
+t_g_ffcmd() {  # fail-first 명령은 실패해야 통과. 시작하지 못한 명령은 통과가 아니다. 명령 없는 면제는 일반만
+  mkgrade 일반
+  gok move U1 build || return 1
+  php check U1 fail-first -- true; eq "$rc" 1 "true" || return 1
+  has "$(last)" "FAILED: fail-first" "문구" || return 1
+  has "$(tail -n 1 "$ev")" '"pass": false' "true 이벤트" || return 1
+  php check U1 fail-first -- /없는/명령; eq "$rc" 1 "시작 못 한 명령" || return 1
+  php move U1 verify; refc "실패 결과만 있다" || return 1
+  gok check U1 fail-first -- false || return 1
+  has "$(tail -n 1 "$ev")" '"pass": true' "false 이벤트" || return 1
+  has "$(tail -n 1 "$ev")" '"exit": 1' "실제 종료 코드" || return 1
+  mkgrade 일반; gok move U1 build || return 1
+  gok check U1 fail-first --pass --reason "해당 없음: 시험 도구 없음" || return 1
+  php check U1 fail-first --fail --reason x; eq "$rc" 1 "fail-first --fail" || return 1
+  php move U1 verify; refc "통과 뒤에 실패" || return 1
+  gok check U1 fail-first -- false && gok move U1 verify || return 1
+}
+
+t_g_done() {  # 일반: review, mutation 이 각각 필요하다. 종류별 가장 최근 결과가 통과여야 한다
+  mkgrade 일반; g_to_review || return 1
+  gok commit U1 repo abc1234 || return 1
+  php move U1 done; refc "둘 다 없음" || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: review, mutation" "문구" || return 1
+  g_ev mutation || return 1
+  php move U1 done; refc "review 없음" || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: review" "문구" || return 1
+  php check U1 review --fail --reason x; eq "$rc" 1 "review --fail" || return 1
+  php move U1 done; refc "review 가 실패" || return 1
+  g_ev review || return 1
+  php check U1 mutation --fail --reason x; eq "$rc" 1 "mutation --fail" || return 1
+  php move U1 done; refc "통과 뒤에 실패한 mutation" || return 1
+  g_ev mutation && gok move U1 done || return 1
+}
+
+t_g_done_mut() {  # 일반: review 만 있고 mutation 이 없으면 거부
+  mkgrade 일반; g_to_review || return 1
+  gok commit U1 repo abc1234 || return 1
+  g_ev review || return 1
+  php move U1 done; refc || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: mutation" "문구" || return 1
+}
+
+t_g_rework() {  # 재작업 뒤에는 이전 회차의 review·mutation 이 통하지 않는다
+  mkgrade 일반; g_to_review || return 1
+  g_ev review && g_ev mutation && gok commit U1 repo abc1234 || return 1
+  gok move U1 build --reason "수정" || return 1
+  gok move U1 verify || return 1
+  gok check U1 cmd -- true && gok move U1 review && gok commit U1 repo def5678 || return 1
+  php move U1 done; refc "이전 회차 증거만 있다" || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: review, mutation" "문구" || return 1
+  g_ev review && g_ev mutation || return 1
+  gok move U1 done || return 1
+}
+
+t_g_high() {  # 고위험: manual 만으로 검증을 못 넘고, 명령 없는 fail-first 는 거부, cross-review 가 필요하다
+  mkgrade 고위험
+  gok move U1 build || return 1
+  local before; before=$(nev)
+  php check U1 fail-first --pass --reason "해당 없음: x"; refc "명령 없는 fail-first" || return 1
+  eq "$(nev)" "$before" "거부는 이벤트를 쓰지 않는다" || return 1
+  gok check U1 fail-first -- false && gok move U1 verify && g_ev manual || return 1
+  php move U1 review; refc "manual 만" || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: cmd" "문구" || return 1
+  gok check U1 cmd -- true && gok move U1 review && gok commit U1 repo abc1234 && g_ev review && g_ev mutation || return 1
+  php move U1 done; refc "cross-review 없음" || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: cross-review" "문구" || return 1
+  g_ev cross-review && gok move U1 done || return 1
+}
+
+t_g_screen() {  # 화면 ✔: ui-review 가 없으면 done 거부
+  mkgrade 일반 ✔; g_to_review || return 1
+  g_ev review && g_ev mutation && gok commit U1 repo abc1234 || return 1
+  php move U1 done; refc || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: ui-review" "문구" || return 1
+  g_ev ui-review && gok move U1 done || return 1
+}
+
+t_g_light() {  # 가벼움·빈 등급·등급 열 없음: 더하는 조건 없이 done 까지 간다
+  local g
+  for g in 가벼움 ""; do
+    mkgrade "$g" ✔
+    run_full U1 repo abc1234 || { why="등급 '$g' 한 바퀴 실패: $out"; return 1; }
+  done
+  mkgrade 가벼움 ✔
+  php show; has "$out" "| U1 | 대기 | - | - |" "가벼움 show" || return 1
+  mkcase; php show; has "$out" "| U1 | 대기 | - | - |" "등급 열 없음 show" || return 1
+}
+
+t_g_unknown() {  # 모르는 등급·화면 값은 사용 오류
+  mkgrade 최상
+  php move U1 build; eq "$rc" 2 "move" || return 1
+  php show; eq "$rc" 2 "show" || return 1
+  eq "$(nev)" 0 "이벤트 줄 수" || return 1
+  mkgrade 일반 ✓
+  php move U1 build; eq "$rc" 2 "모르는 화면 값" || return 1
+}
+
+t_g_show() {  # show 의 남은 증거 열
+  mkgrade 일반 ✔
+  php show; has "$out" "| 단위 | 단계 | 멈춤 | 남은 증거 |" "머리글" || return 1
+  has "$out" "| U1 | 대기 | - | fail-first, cmd 또는 manual, review, mutation, ui-review |" "대기" || return 1
+  gok check U1 fail-first -- false && gok move U1 build && gok move U1 verify || return 1
+  php show; has "$out" "| U1 | 검증 | - | cmd 또는 manual, review, mutation, ui-review |" "검증" || return 1
+  gok check U1 cmd -- true && gok move U1 review || return 1
+  php show; has "$out" "| U1 | 검수 | - | review, mutation, ui-review |" "검수" || return 1
+  g_ev review && g_ev mutation && g_ev ui-review && gok commit U1 repo abc1234 && gok move U1 done || return 1
+  php show; has "$out" "| U1 | 완료 | - | - |" "완료" || return 1
+  mkgrade 고위험
+  php show; has "$out" "| U1 | 대기 | - | fail-first, cmd, review, mutation, cross-review |" "고위험" || return 1
+}
+
+t_g_status() {  # 등급·화면 열이 있는 상태표에도 status.sh 가 돈다
+  mkgrade 일반 ✔
+  gok check U1 fail-first -- false && gok move U1 build || return 1
+  rc=0; out=$(bash "$status" "$h" 2>&1) || rc=$?
+  eq "$rc" 0 "status.sh exit" || { why="$why / $out"; return 1; }
+  has "$out" "| 현재 단위 | U1 내용U1 |" "status.sh" || return 1
+}
+
 run() { why=; if "t_$1"; then pass=$((pass + 1)); echo "PASS $1"; else fail=$((fail + 1)); echo "FAIL $1: ${why:-조건 불일치}"; fi; }
 t_handdone() {  # 보충: 이벤트 없이 손으로 `완료`라고 적은 선행 단위는 완료로 본다. `진행`은 아니다
   mkcase
@@ -316,6 +462,6 @@ t_handdone() {  # 보충: 이벤트 없이 손으로 `완료`라고 적은 선�
   php show; okc "show" || return 1
   has "$out" "| U1 | 완료 |" "show" || return 1
 }
-for t in cycle no_check fail_check no_commit prereq skip_back halt untouched ignored usage status manual handdone handguard reentry race newline plans; do run "$t"; done
+for t in cycle no_check fail_check no_commit prereq skip_back halt untouched ignored usage status manual handdone handguard reentry race newline plans g_ff g_ffcmd g_done g_done_mut g_rework g_high g_screen g_light g_unknown g_show g_status; do run "$t"; done
 echo "시험 $((pass + fail))개 · 실패 ${fail}개"
 [ "$fail" -eq 0 ]

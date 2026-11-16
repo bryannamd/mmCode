@@ -6,4 +6,4 @@
 4. auto 계획이었다면 이 계획의 `relay/<plan>/*` 브랜치(`.discarded-<n>` 포함)와 `docs/relay/<plan>/<unit>/wt/` 워크트리 — 남은 것을 목록으로 보이고 정리할지. 머지된 것만 `git worktree remove`·`git branch -d`로 지운다(강제 삭제 없음). `.discarded-<n>`은 미머지 커밋을 담고 있으니 지울지 사용자가 정한다. 이 실행이 만든 `docs/relay/<plan>/` 문서를 커밋할지도 이때 정한다.
 5. 인계 문서 재개 블록에 "계획 종료 <날짜>" 표시, 자동 승인 줄이 있었으면 "소진" 으로 갱신.
 6. 관련 메모리(`/memory`)·lessons 갱신: 반복 실수·비자명한 해결책만.
-7. 마지막 세션 pane 은 사용자가 닫는다(자기 pane close 금지).
+7. 마지막 세션 터미널은 사용자가 닫는다(자기 터미널 close 금지).
