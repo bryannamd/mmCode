@@ -650,7 +650,55 @@ t_handdone() {  # 보충: 이벤트 없이 손으로 `완료`라고 적은 선�
   php show; okc "show" || return 1
   has "$out" "| U1 | 완료 |" "show" || return 1
 }
+t_ready() {  # ready: 검수 단계·멈춤 없음·증거(커밋 기록 제외)가 다 있을 때만 0. 이벤트·상태표를 쓰지 않는다
+  mkgrade 일반
+  local n0
+  cp "$h" "$d/before.md"; php ready U1; refc "대기 단계" || return 1
+  has "$(last)" "검수 단계가 아니다" "거부 이유" || return 1
+  eq "$(nev)" 0 "이벤트 줄 수" || return 1
+  cmp -s "$h" "$d/before.md" || { why="거부한 ready 가 상태표를 바꿨다"; return 1; }
+  g_to_review || return 1
+  n0=$(nev); php ready U1; refc "증거 부족" || return 1
+  eq "$(last)" "REFUSED: U1 에 빠진 증거: review, mutation" "거부 문구" || return 1
+  g_ev review && g_ev mutation && gok halt U1 decision || return 1
+  n0=$(nev); php ready U1; refc "멈춤" || return 1
+  eq "$(nev)" "$n0" "이벤트 줄 수(멈춤)" || return 1
+  gok resume U1 || return 1
+  n0=$(nev); cp "$h" "$d/before.md"
+  php ready U1; okc "ready" || return 1
+  has "$(last)" "OK:" "출력" || return 1
+  eq "$(nev)" "$n0" "이벤트 줄 수(통과)" || return 1
+  cmp -s "$h" "$d/before.md" || { why="ready 가 상태표를 바꿨다"; return 1; }
+  php move U1 done; refc "done 은 여전히 커밋 기록이 필요하다" || return 1
+  mkcase; to_verify U1 && gok check U1 cmd -- true && gok move U1 review || return 1
+  php ready U1; okc "등급 없는 단위" || return 1
+}
+
+t_queued() {  # 되돌리기 move queued: 구현·검증·검수에서 대기로. --reason 이 필요하다. 대기에서 다시 시작할 수 있다
+  mkcase
+  gok move U1 build || return 1
+  php move U1 queued; refc "reason 없음" || return 1
+  gok move U1 queued --reason discard || return 1
+  eq "$(cell U1 11)" 미착수 "상태" || return 1
+  has "$(tail -n 1 "$ev")" '"data": {"from": "build", "to": "queued", "reason": "discard"}' "이벤트" || return 1
+  php move U1 queued --reason x; refc "대기에서 대기" || return 1
+  to_verify U1 || { why="다시 시작 실패: $out"; return 1; }
+  gok move U1 queued --reason x || return 1
+  to_verify U1 && gok check U1 cmd -- true && gok move U1 review && gok move U1 queued --reason y || return 1
+  eq "$(cell U1 11)" 미착수 "검수에서 되돌린 상태" || return 1
+}
+
+t_blockedq() {  # 시작 전 단위의 blocked:<단위> 멈춤도 상태 칸이 blocked. resume 뒤 미착수. 다른 멈춤은 단계 그대로
+  mkcase
+  gok halt U1 blocked:U1 || return 1
+  eq "$(cell U1 11)" blocked "blocked 상태" || return 1
+  gok resume U1 || return 1
+  eq "$(cell U1 11)" 미착수 "resume 뒤" || return 1
+  gok halt U1 decision || return 1
+  eq "$(cell U1 11)" 미착수 "decision 멈춤" || return 1
+}
+
 for t in cycle no_check fail_check no_commit prereq skip_back halt untouched ignored usage status manual handdone handguard reentry race newline plans g_ff g_ffcmd g_done g_done_mut g_rework g_high g_screen g_light g_unknown g_show g_status \
-         h_ask h_nounit h_refuse h_folder h_ids h_stopafter h_resume h_gate h_decisions h_show; do run "$t"; done
+         h_ask h_nounit h_refuse h_folder h_ids h_stopafter h_resume h_gate h_decisions h_show ready queued blockedq; do run "$t"; done
 echo "시험 $((pass + fail))개 · 실패 ${fail}개"
 [ "$fail" -eq 0 ]

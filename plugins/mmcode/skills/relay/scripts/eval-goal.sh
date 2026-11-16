@@ -8,11 +8,14 @@
 #            잠금은 그 짧은 구간에만 쥔다. git·조건 명령은 잠금 밖에서 돌린다(훅이 이 스크립트를 불러도 교착되지 않게).
 #            다른 프로세스가 잠금을 RELAY_LOCK_WAIT 초(기본 30) 넘게 쥐면 기다리지 않고 BLOCKED 로 끝난다.
 #            git·조건 명령을 돌리는 명령(init·run·clean·unit·fix·redeleg)은 goal/.driver 를 명령 내내 쥔다(한 계획에 하나만).
-# 근거: references/DESIGN-auto.md 3~5·8절. 외부 의존 없음(bash + python3 + git). 파괴적 git 명령은 쓰지 않는다.
+# 단위의 단계·커밋 기록·멈춤(blocked)은 같은 폴더의 phase.sh 로 쓴다(수동 모드와 같은 .mmcode/events.jsonl). 상태표의 상태·종료 시각·커밋 칸은
+#            phase.sh 가 다시 만들고, 이 스크립트는 읽기만 한다. phase.sh 는 goal/.lock 을 잡지 않으므로 이 잠금을 쥔 채 불러도 교착되지 않는다.
+#            phase.sh 가 인계 문서를 다시 쓰므로 부른 뒤에는 인계 문서를 다시 읽는다.
+# 근거: references/DESIGN-auto.md 3~5·8절, docs/plans/orchestration-plan.md 4.3절. 외부 의존 없음(bash + python3 + git). 파괴적 git 명령은 쓰지 않는다.
 set -euo pipefail
 command -v python3 >/dev/null 2>&1 || { echo "python3 이 없다" >&2; exit 2; }
 command -v git >/dev/null 2>&1 || { echo "git 이 없다" >&2; exit 2; }
-exec python3 -I - "$@" <<'PY'
+exec python3 -I - "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" "$@" <<'PY'
 import contextlib, fcntl, fnmatch, json, os, re, shlex, shutil, subprocess, sys, tempfile, time, traceback
 from datetime import datetime, timezone
 
@@ -31,6 +34,8 @@ NOCHANGE = '없음(변경 없음)'
 STOPS = {'rotate', 'done', 'limit:iterations', 'limit:duration', 'expired', 'judge-fail', 'timeout-survivors',
          'scope', 'fix-cap', 'rotate-uncertain', 'rotate-failed', 'worker-alive'}
 COLUMNS = ['단위', '내용', '파일', '선행', '모델', '병렬', '검수', 'pathspec', '가중치', '상태', '종료 시각', '커밋']
+OPTCOLS = ['등급', '화면']  # phase.sh 가 읽는 선택 열(순서 무관)
+PHASE = os.path.join(sys.argv.pop(1), 'phase.sh')  # bash 줄이 넘긴 스크립트 폴더
 # 권위 관문 파일(DESIGN 5절): 무인 중에는 커밋하지 않는다
 GATE = re.compile(r'(^|/)(\.claude/settings[^/]*$|\.env[^/]*$|\.git(/|$))')
 META, GLOB = set(';|&`$()<>'), set('*?[')
@@ -99,10 +104,6 @@ def write_atomic(path, text):
 
 def now_iso():
     return datetime.now().astimezone().isoformat(timespec='seconds')
-
-
-def now_min():
-    return datetime.now().strftime('%Y-%m-%d %H:%M')
 
 
 def elapsed(st):
@@ -590,8 +591,8 @@ class Ctx:
             vals = [cell_text(L[i], x) for x in sp]
             if head is None:
                 head = vals
-                if len(head) != len(COLUMNS) or set(head) != set(COLUMNS):
-                    errs.append(f'상태표 머리글은 12열({" | ".join(COLUMNS)})이어야 한다')
+                if len(head) != len(set(head)) or not set(COLUMNS) <= set(head) or not set(head) <= set(COLUMNS + OPTCOLS):
+                    errs.append(f'상태표 머리글은 12열({" | ".join(COLUMNS)})에 선택 열({", ".join(OPTCOLS)})만 더할 수 있다')
             elif not set(''.join(vals)) <= set('-: '):
                 if len(vals) != len(head):
                     errs.append(f'{i + 1}번째 줄: 칸 {len(vals)}개 ≠ 머리글 {len(head)}개(칸 안의 | 는 \\| 로 쓴다)')
@@ -613,21 +614,6 @@ class Ctx:
         if r is None:
             raise Usage(f'상태표에 단위 {unit} 이 없다')
         return r
-
-    def set_row(self, unit, vals):
-        # 그 단위 행에서 지정한 칸만 바꾼다. 다른 칸의 원문(이스케이프 포함)은 그대로 둔다.
-        def fn():
-            head, rows, _ = self.rows()
-            for i, r, sp in rows:
-                if r.get('단위') == unit:
-                    line = self.lines[i]
-                    for idx in sorted((head.index(name) for name in vals), reverse=True):  # 뒤 칸부터 바꿔 앞 칸 위치를 지킨다
-                        a, b = sp[idx]
-                        line = line[:a + 1] + ' ' + vals[head[idx]].replace('|', '\\|') + ' ' + line[b:]
-                    self.lines[i] = line
-                    return
-            raise Usage(f'상태표에 단위 {unit} 이 없다')
-        self.edit(fn)
 
     def add_row(self, vals):
         # 상태표 끝에 행을 더한다. 칸 안의 | 는 \| 로 쓴다
@@ -741,13 +727,47 @@ def new_unit(c, st, u, slug, base):
             'commit': '', 'worker': {}, 'key': key_for(st, u)}
 
 
+def phase(c, *args):
+    # phase.sh <하위 명령> <인계 문서> <인자...> → (통과 여부, 거부 이유). 사용 오류·내부 오류(2)는 멈춘다.
+    r = subprocess.run(['bash', PHASE, args[0], c.hpath, *args[1:]], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    c.reload()  # phase.sh 가 상태표를 다시 썼다
+    if r.returncode not in (0, 1):
+        raise Blocked(f'phase.sh {" ".join(args)} 오류: {(r.stderr or r.stdout).strip()[-300:]}')
+    last = (r.stdout.strip().splitlines() or [''])[-1]
+    return r.returncode == 0, last.split(': ', 1)[-1]
+
+
+def phase_ok(c, U, *args):
+    # 거부되면 중단 기록 없이 이 명령만 거부한다(exit 1)
+    ok, why = phase(c, *args)
+    if not ok:
+        raise Blocked(f'{U}: phase.sh {args[0]} 거부: {why}')
+
+
+def phase_done(c, st, U, slug, h):
+    # 머지된 단위의 커밋 기록과 완료 전환. 이미 완료면 아무것도 쓰지 않는다. 커밋 기록은 한 번만 쓴다(완료 전환이 거부된 뒤 다시 올 때).
+    if c.row(U).get('상태') == '완료':
+        return
+    if not (st['units'].get(U) or {}).get('phase_commit'):
+        phase_ok(c, U, 'commit', U, slug, h)
+        put(c, st, ('units', U, 'phase_commit'), h)
+    phase_ok(c, U, 'move', U, 'done')
+
+
 def stop(c, reason):
     # 중단 기록은 stopped_reason 하나로 모은다. rotate·done 은 중단: 줄을 쓰지 않고 남은 줄도 지운다(DESIGN 9단계).
+    # blocked:<단위> 는 phase.sh halt 로 그 단위를 멈춘다(상태 칸 blocked). 이미 blocked 면 다시 쓰지 않는다.
+    why = None
+    if reason.startswith('blocked:'):
+        c.reload()
+        if c.row(reason[8:]).get('상태') != 'blocked':
+            ok, why = phase(c, 'halt', reason[8:], reason)
+            why = None if ok else why
     with c.locked():
-        if reason.startswith('blocked:'):
-            c.set_row(reason[8:], {'상태': 'blocked'})
         c.update(lambda s: s.__setitem__('stopped_reason', reason))
         c.set_line('중단', None if reason in ('rotate', 'done') else reason)
+    if why:
+        print(f'주의: phase.sh halt {reason} 거부: {why}')
 
 
 def block(c, u, msg):
@@ -1249,8 +1269,14 @@ def u_start(c, st, U, slug, specs, union, R, args):
     if probs:
         block(c, U, '시작 검사 — ' + '; '.join(probs))
     base = R['expected_tip']
-    c.set_row(U, {'상태': '진행'})
-    git(repo, 'worktree', 'add', '-q', '-b', br, wt, base)
+    # 거부(열린 정지 지시·멈춘 단위·선행 미완료·손으로 관리하던 행)는 예외 없이 시작하지 않는다.
+    # 단계 전환 뒤·워크트리 생성 전에 끊겼으면 phase.sh move <단위> queued --reason <사유> 뒤에 다시 시작한다.
+    phase_ok(c, U, 'move', U, 'build')
+    try:
+        git(repo, 'worktree', 'add', '-q', '-b', br, wt, base)
+    except GitErr:
+        phase(c, 'move', U, 'queued', '--reason', 'worktree add 실패')
+        raise
     put(c, st, ('units', U), new_unit(c, st, U, slug, base))
     print(f'OK: start {U} wt={wt} branch={br} base={short(base)}')
 
@@ -1267,6 +1293,7 @@ def u_checkwt(c, st, U, slug, specs, union, R, args):
 def u_commit(c, st, U, slug, specs, union, R, args):
     if len(args) != 2 or args[0] != '-m' or not args[1].strip():
         raise Usage('사용: unit <HANDOFF.md> <UNIT> commit -m <메시지>')
+    phase_ok(c, U, 'ready', U)  # 검수 단계·멈춤 없음·증거. 거부는 중단이 아니다
     u = need_unit(st, U)
     if u.get('stage') not in ('started', 'reviewed', 'committing') or u.get('commit'):
         raise Usage(f'{U}: stage {u.get("stage")} · commit {u.get("commit") or "-"} — 커밋할 단계가 아니다')
@@ -1347,6 +1374,7 @@ def u_merge(c, st, U, slug, specs, union, R, args):
             probs.append(f'들어올 새 파일과 겹치는 무시 파일 {fmt(ign)}')
     if probs:
         block(c, U, '머지 전 검사 — ' + '; '.join(probs))
+    phase_ok(c, U, 'ready', U)  # 머지한 뒤에 완료 기록이 거부되면 git 과 기록이 어긋난다. 머지 전에 본다
     if not cm:
         def nochange(s):  # 잠근 채 그 사이 커밋 기록이 생기지 않았는지 확인하고 무변경 완료를 적는다
             cur = s['units'].get(U) or {}
@@ -1354,7 +1382,7 @@ def u_merge(c, st, U, slug, specs, union, R, args):
                 raise Blocked(f'{U}: 그 사이 상태가 바뀌었다 — 무변경으로 적지 않는다. recover 로 확인한다')
             cur['commit'], cur['stage'] = NOCHANGE, 'merged'
         c.update(nochange)
-        c.set_row(U, {'상태': '완료', '종료 시각': now_min(), '커밋': NOCHANGE})
+        phase_done(c, st, U, slug, NOCHANGE)
         print(f'OK: merge {U} {NOCHANGE}')
         return
     def reserve(s):  # 잠근 채 머지 의도를 남긴다. ff 뒤 기록에 실패해도 recover 가 이 표시로 미확정 머지를 알아본다
@@ -1385,7 +1413,7 @@ def u_merge(c, st, U, slug, specs, union, R, args):
         cur.pop('merge_intent', None)
         s['repos'][slug]['expected_tip'] = cm
     c.update(record)
-    c.set_row(U, {'상태': '완료', '종료 시각': now_min(), '커밋': f'{slug} {short(cm)}'})
+    phase_done(c, st, U, slug, short(cm))
     if symref(repo) != R['target_ref']:
         print(f'주의: 머지 뒤 HEAD 가 {R["target_ref"]} 가 아니다 — 다음 단위 시작 검사가 멈춘다')
     print(f'OK: merge {U} {slug} {short(cm)}')
@@ -1401,6 +1429,7 @@ def u_cleanup(c, st, U, slug, specs, union, R, args):
         raise Blocked(f'{U}: HEAD 가 대상 브랜치 {R["target_ref"]} 가 아니다 — 정리하지 않는다')
     if not (cm == NOCHANGE or (cm and is_anc(repo, cm, R['target_ref']))):
         raise Usage(f'{U}: 대상 브랜치에 머지되지 않았다 — merge 먼저')
+    phase_done(c, st, U, slug, NOCHANGE if cm == NOCHANGE else short(cm))  # 머지 뒤 완료 기록이 빠졌으면 여기서 적는다. 거부되면 정리하지 않는다
     try:
         moved = move_logs(c, U, u['wt'], True)
     except LogsErr as e:
@@ -1485,8 +1514,7 @@ def u_recover(c, st, U, slug, specs, union, R, args):
             cur['stage'] = 'merged' if left else 'cleaned'
             cur.pop('merge_intent', None)
         c.update(finish)
-        if row.get('상태') != '완료':
-            c.set_row(U, {'상태': '완료', '종료 시각': now_min(), '커밋': NOCHANGE if cm == NOCHANGE else f'{slug} {short(cm)}'})
+        phase_done(c, st, U, slug, NOCHANGE if cm == NOCHANGE else short(cm))
         print('cleanup' if left else 'done')
         return
     if tip and tip != u['base_head']:
@@ -1501,9 +1529,9 @@ def u_recover(c, st, U, slug, specs, union, R, args):
 
 
 def u_discard(c, st, U, slug, specs, union, R, args):
-    # 사용자가 blocked 행을 미착수로 되돌린 단위: 자산을 치우고 처음부터 하게 한다(브랜치는 이름만 바꿔 보존)
-    if c.row(U).get('상태') != '미착수':
-        raise Usage(f'{U}: 행이 미착수가 아니다 — 사용자가 되돌린 단위만 discard 한다')
+    # blocked 이거나 미착수인 단위: 자산을 치우고 처음부터 하게 한다(브랜치는 이름만 바꿔 보존). 단계는 phase.sh 로 대기에 되돌린다
+    if c.row(U).get('상태') not in ('미착수', 'blocked'):
+        raise Usage(f'{U}: 행이 미착수·blocked 가 아니다. 멈춘 단위나 시작 전 단위만 discard 한다')
     repo, br, u = R['path'], branch(c, U), st['units'].get(U) or {}
     wt = u.get('wt') or wtpath(c, U)
     try:  # 버린 시도의 REPORT.md 도 logs/ 로 보낸다. 단위 폴더의 REPORT.md 자리는 다시 하는 시도 몫이다
@@ -1525,6 +1553,10 @@ def u_discard(c, st, U, slug, specs, union, R, args):
             n += 1
         new = f'{br}.discarded-{n}'
         git(repo, 'branch', '-m', br, new)
+    if c.row(U).get('상태') == 'blocked':
+        phase_ok(c, U, 'resume', U)
+    if c.row(U).get('상태') != '미착수':
+        phase_ok(c, U, 'move', U, 'queued', '--reason', 'discard')
     key = u.get('key') or key_for(st, U)
     c.update(lambda s: (s['units'].pop(U, None), s.setdefault('redelegations', {}).pop(key, None)))
     print(f'OK: discard {U}' + (f' 브랜치 → {new}' if new else ''))
@@ -1538,7 +1570,7 @@ def cmd_unit(c, rest):
     if len(rest) < 2 or rest[1] not in UNIT_OPS or (rest[2:] and rest[1] != 'commit'):
         raise Usage(USAGE)
     U, op = rest[0], rest[1]
-    # 잠금은 state.json·인계 문서를 고치는 순간에만 잡는다(put·set_row·stop). git 은 잠금 밖에서 돌려 훅과 교착되지 않게 한다
+    # 잠금은 state.json·인계 문서를 고치는 순간에만 잡는다(put·add_row·stop). phase.sh 는 goal/.lock 을 잡지 않는다. git 은 잠금 밖에서 돌려 훅과 교착되지 않게 한다
     st = c.state()
     units, union = c.strict()
     if U not in units:

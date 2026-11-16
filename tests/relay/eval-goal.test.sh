@@ -95,7 +95,15 @@ for i, l in enumerate(L):
 open(p, 'w', encoding='utf-8').write('\n'.join(L))
 PYT
 }
-work() { must unit "$H" "$1" start; printf 'a1\n' > "$(wt "$1")/src/a.txt"; }  # 단위 시작 + Worker 수정
+PH="$HERE/../../plugins/mmcode/skills/relay/scripts/phase.sh"
+ph() { OUT=$(bash "$PH" "$1" "$H" "${@:2}" 2>&1); RC=$?; }   # phase.sh <하위 명령> <인계 문서> <인자...>
+pm() { ph "$@"; [ "$RC" = 0 ] || ng "준비 단계 phase.sh $*" "rc=$RC $(printf '%s' "$OUT" | tail -n 2 | tr '\n' ' ')"; }
+rv() { pm move "$1" verify; pm check "$1" manual --pass --reason 시험; pm move "$1" review; }   # 구현에서 검수 단계까지(등급 없는 행)
+st() { must unit "$H" "$1" start; rv "$1"; }                                    # 단위 시작 + 검수 단계
+work() { st "$1"; printf 'a1\n' > "$(wt "$1")/src/a.txt"; }  # 단위 시작 + Worker 수정
+evs() { cat "$R/.mmcode/events.jsonl" 2>/dev/null; }
+lastev() { evs | tail -n 1 | grep -qF -- "$1"; }   # 마지막 이벤트에 글이 있는지
+ndone() { evs | grep -F '"type": "unit.phase"' | grep -F "\"unit\": \"$1\"" | grep -cF '"to": "done"'; }   # 단위의 done 이벤트 수
 ext() { printf 'ext\n' >> "$R/other.txt"; git -C "$R" commit -q -am ext; }      # 남의 커밋(pathspec 밖)
 TWO="$(row U1 src/a.txt)
 $(row U2 lib/b.txt)"
@@ -297,7 +305,7 @@ setup mr "$OKCMD" "$(row U1 src/a.txt)
 | U2 | 내용 | x.txt | — | sonnet | ✘ | sonnet | two:x.txt | | 미착수 | | |" "저장소: two=$TMP/two"
 eg treekey "$H" two
 t "treekey: docs 가 없는 저장소" '[ $RC = 0 ] && [ "$OUT" = "$(git -C "$TMP/two" rev-parse "HEAD^{tree}")" ]'
-must init "$H"; must unit "$H" U2 start; printf 'x\n' > "$(wt U2)/x.txt"
+must init "$H"; st U2; printf 'x\n' > "$(wt U2)/x.txt"
 must unit "$H" U2 checkwt; must unit "$H" U2 commit -m U2; must unit "$H" U2 merge; must unit "$H" U2 cleanup
 t "저장소 둘: 다른 저장소 단위는 그 저장소에만 머지" '[ "$(cat "$TMP/two/x.txt")" = x ] && rowis U2 "two $(git -C "$TMP/two" rev-parse --short=7 HEAD)" && [ "$(git -C "$R" rev-parse HEAD)" = "$(sget repos.mr.init_head)" ] && [ ! -e "$(wt U2)" ]'
 mkhandoff "$OKCMD" "| U1 | 내용 | a | — | sonnet | ✘ | sonnet | mr:src/a.txt, two:x.txt | | 미착수 | | |" "저장소: two=$TMP/two"
@@ -323,7 +331,7 @@ must clear-stop "$H"
 must fix "$H" add U2-fix2 --key ./fail.sh --repo dn --files lib/b.txt --summary 2회차
 eg fix "$H" add U2-fix3 --key ./fail.sh --repo dn --files lib/b.txt --summary 3회차
 t "완료 판정: 3번째 보정 → fix-cap 중단" '[ $RC = 1 ] && has "BLOCKED: fix-cap" && [ "$(sget stopped_reason)" = fix-cap ] && ! rowof U2-fix3 >/dev/null && grep -q "^중단: fix-cap$" "$H"'
-must unit "$H" U2-fix1 start
+st U2-fix1
 t "재위임 키: 보정 단위는 등록한 완료 기준 키" '[ "$(sget units.U2-fix1.key)" = ./fail.sh ]'
 eg redeleg "$H" ./fail.sh incr; a=$OUT; eg redeleg "$H" ./fail.sh incr; b=$OUT; eg redeleg "$H" ./fail.sh incr
 t "재위임 한도: 같은 키 3번째 거부(보정 단위끼리 공유)" '[ "$a" = 1 ] && [ "$b" = 2 ] && [ $RC = 1 ] && has "재위임 한도"'
@@ -339,7 +347,7 @@ setup xb "$OKCMD" "$TWO"; must init "$H"; work U1
 must unit "$H" U1 commit -m U1; must unit "$H" U1 merge; must unit "$H" U1 cleanup
 ext; eg unit "$H" U2 start
 t "외부 커밋: 두 단위 사이 → blocked" '[ $RC = 1 ] && has "expected_tip" && rowis U2 blocked && rowis U1 완료'
-setup xc "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start; must unit "$H" U1 commit -m U1
+setup xc "$OKCMD" "$TWO"; must init "$H"; st U1; must unit "$H" U1 commit -m U1
 t "무변경 단위: commit → NOCHANGE" '[ "$OUT" = NOCHANGE ]'
 ext; eg unit "$H" U1 merge
 t "외부 커밋: 무변경 단위 ④ → blocked" '[ $RC = 1 ] && has "expected_tip" && rowis U1 blocked && ! rowof U1 | grep -F "$NOCH" >/dev/null'
@@ -362,14 +370,14 @@ wrap touch unit "$H" U1 merge
 t "흔적: 검사 뒤 머지 직전에 같은 파일 수정 → 머지 거부·blocked" '[ $RC = 1 ] && has "머지 거부" && [ "$(cat "$R/src/a.txt")" = race ] && [ "$(git -C "$R" rev-parse HEAD)" = "$(sget repos.w5b.init_head)" ] && [ "$(brtip U1)" = "$(sget units.U1.commit)" ]'
 setup w6 "$OKCMD" "$(row U1 src/new.txt)"; must init "$H"
 printf 'new.txt\n' > "$R/src/.gitignore"; printf 'old\n' > "$R/src/new.txt"   # 공유 트리에서만 무시되는 파일
-must unit "$H" U1 start; printf 'unit\n' > "$(wt U1)/src/new.txt"; must unit "$H" U1 commit -m U1; eg unit "$H" U1 merge
+st U1; printf 'unit\n' > "$(wt U1)/src/new.txt"; must unit "$H" U1 commit -m U1; eg unit "$H" U1 merge
 t "흔적: 들어올 새 파일과 겹치는 무시 파일 → 사전 검사 blocked" '[ $RC = 1 ] && has "무시 파일 src/new.txt" && [ "$(cat "$R/src/new.txt")" = old ]'
 setup w7 "$OKCMD" "$TWO"; must init "$H"; printf 'x\n' >> "$R/other.txt"; work U1
 must unit "$H" U1 commit -m U1; eg unit "$H" U1 merge
 t "흔적: pathspec 밖 파일만 더티 → 정상 진행" '[ $RC = 0 ] && rowis U1 완료 && grep -q "^x$" "$R/other.txt" && [ "$(git -C "$R" show HEAD:src/a.txt)" = a1 ]'
 setup w8 "$OKCMD" "$TWO"; must init "$H"; work U1; printf 'b1\n' > "$(wt U1)/lib/b.txt"; eg unit "$H" U1 checkwt
 t "흔적: 워크트리 변경이 pathspec 밖으로 → 3단계 blocked" '[ $RC = 1 ] && has "pathspec 밖 lib/b.txt" && rowis U1 blocked'
-must clear-stop "$H"; eg unit "$H" U1 commit -m U1
+must clear-stop "$H"; pm resume U1; eg unit "$H" U1 commit -m U1
 t "흔적: 같은 상태로 커밋 → ① blocked·커밋 0" '[ $RC = 1 ] && has "pathspec 밖 lib/b.txt" && [ "$(brtip U1)" = "$(sget units.U1.base_head)" ]'
 setup w9 "$OKCMD" "$(row U1 src/)"; must init "$H"; work U1
 printf 'n\n' > "$(wt U1)/src/new.txt"; printf '\000\377\001' > "$(wt U1)/src/img.bin"; printf '\000\377\001' > "$TMP/img.exp"
@@ -377,9 +385,9 @@ eg unit "$H" U1 checkwt
 t "흔적: 신규 파일·바이너리 → 검수 diff 에 포함" '[ $RC = 0 ] && has "src/new.txt" && has "src/img.bin" && has "src/a.txt"'
 must unit "$H" U1 commit -m U1; must unit "$H" U1 merge; must unit "$H" U1 cleanup
 t "흔적: 신규 파일·바이너리 → 커밋·머지에 포함" 'cmp -s "$R/src/img.bin" "$TMP/img.exp" && [ "$(cat "$R/src/new.txt")" = n ] && [ -z "$(git -C "$R" status --porcelain -- src)" ]'
-setup w10 "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start; must unit "$H" U1 commit -m U1; eg unit "$H" U1 merge
+setup w10 "$OKCMD" "$TWO"; must init "$H"; st U1; must unit "$H" U1 commit -m U1; eg unit "$H" U1 merge
 t "흔적: Worker 무변경 → 커밋 없이 완료·없음(변경 없음)" '[ $RC = 0 ] && rowis U1 완료 && rowof U1 | grep -F "$NOCH" >/dev/null && [ "$(git -C "$R" rev-parse HEAD)" = "$(sget repos.w10.init_head)" ]'
-setup g1 "$OKCMD" "$(row U1 .)"; must init "$H"; must unit "$H" U1 start
+setup g1 "$OKCMD" "$(row U1 .)"; must init "$H"; st U1
 mkdir -p "$(wt U1)/.claude"; printf '{}\n' > "$(wt U1)/.claude/settings.json"; eg unit "$H" U1 checkwt
 t "권위 관문: 워크트리 변경이 .claude/settings.json → blocked·커밋 0" '[ $RC = 1 ] && has "권위 관문 .claude/settings.json" && ! has "pathspec 밖" && [ "$(brtip U1)" = "$(sget units.U1.base_head)" ]'
 
@@ -408,7 +416,7 @@ eg unit "$H" U1 recover
 t "복구: 워크트리 제거 뒤 끊김 → cleanup" '[ "$OUT" = cleanup ]'
 must unit "$H" U1 cleanup
 t "복구: 워크트리 제거 뒤 → 브랜치까지 정리" '! brtip U1 >/dev/null && [ "$(sget units.U1.stage)" = cleaned ]'
-setup r5 "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start; must unit "$H" U1 commit -m U1; must unit "$H" U1 merge
+setup r5 "$OKCMD" "$TWO"; must init "$H"; st U1; must unit "$H" U1 commit -m U1; must unit "$H" U1 merge
 eg unit "$H" U1 recover
 t "복구: 무변경 완료 뒤·정리 전 → cleanup" '[ "$OUT" = cleanup ]'
 must unit "$H" U1 cleanup; eg unit "$H" U1 recover
@@ -420,7 +428,7 @@ t "복구: Worker 작업 중 → worker" '[ "$OUT" = worker ]'
 must state "$H" set units.U1.stage reviewed; eg unit "$H" U1 recover
 t "복구: reviewed 에서 끊김 → review(5단계부터)" '[ "$OUT" = review ]'
 must unit "$H" U1 commit -m U1; must unit "$H" U1 merge; must unit "$H" U1 cleanup
-must unit "$H" U2 start; must state "$H" set units.U2 null   # 브랜치를 만든 직후·기록 전에 끊긴 상황
+st U2; must state "$H" set units.U2 null   # 브랜치를 만든 직후·기록 전에 끊긴 상황
 eg unit "$H" U2 recover
 t "복구: 브랜치 생성 뒤 기록 전 끊김 → worker·기록 복원" '[ "$OUT" = worker ] && [ "$(sget units.U2.base_head)" = "$(sget repos.r6.expected_tip)" ]'
 
@@ -501,26 +509,26 @@ setup ds "$OKCMD" "$TWO"; must init "$H"; work U1; must redeleg "$H" U1 incr
 printf 'b1\n' > "$(wt U1)/lib/b.txt"; eg unit "$H" U1 checkwt                   # 범위 밖 → blocked
 printf 'a\n' > "$(wt U1)/src/a.txt"; printf 'b\n' > "$(wt U1)/lib/b.txt"         # 사용자가 워크트리를 정리한다
 mkdir -p "$(wt U1)/.relay-logs"; printf 'r\n' > "$(wt U1)/.relay-logs/REPORT.md"
-setrow U1 미착수; must clear-stop "$H"; eg unit "$H" U1 discard
-t "되돌린 단위: discard → 브랜치 이름 보존·워크트리·기록·카운터 정리" '[ $RC = 0 ] && [ -e "$P/U1/logs/REPORT.md" ] && [ ! -e "$P/U1/REPORT.md" ] && "$REALGIT" -C "$R" rev-parse -q --verify refs/heads/relay/p1/U1.discarded-1 >/dev/null && ! brtip U1 >/dev/null && [ ! -e "$(wt U1)" ] && ! sget units.U1 >/dev/null && [ "$(bash "$EG" redeleg "$H" U1 get)" = 0 ]'
-work U1; setrow U1 미착수; eg unit "$H" U1 discard
+must clear-stop "$H"; eg unit "$H" U1 discard   # blocked 행은 discard 가 phase.sh 로 풀고 대기로 되돌린다
+t "되돌린 단위: discard → 브랜치 이름 보존·워크트리·기록·카운터 정리" '[ $RC = 0 ] && rowis U1 미착수 && lastev "\"to\": \"queued\"" && [ -e "$P/U1/logs/REPORT.md" ] && [ ! -e "$P/U1/REPORT.md" ] && "$REALGIT" -C "$R" rev-parse -q --verify refs/heads/relay/p1/U1.discarded-1 >/dev/null && ! brtip U1 >/dev/null && [ ! -e "$(wt U1)" ] && ! sget units.U1 >/dev/null && [ "$(bash "$EG" redeleg "$H" U1 get)" = 0 ]'
+work U1; must stop "$H" blocked:U1; eg unit "$H" U1 discard
 t "되돌린 단위: 더티 워크트리 → 제거 실패·blocked 되살림" '[ $RC = 1 ] && rowis U1 blocked && grep -q "^중단: blocked:U1$" "$H" && [ -e "$(wt U1)" ]'
 
 # ── 검토 지적 재현(2026-10-20 codex 15건, 재현 조건 그대로 + 보강) ─────────
 # #1 머지 뒤 되돌림이 무시 파일을 덮어쓰지 않는다
-setup f1 "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start
+setup f1 "$OKCMD" "$TWO"; must init "$H"; st U1
 rm "$(wt U1)/src/a.txt"; must unit "$H" U1 commit -m delete-a
 printf '/src/a.txt\n' >> "$R/.git/info/exclude"
 wrap ignored-new unit "$H" U1 merge
 t "#1 되돌림: 틈에 새 브랜치·무시 파일 → 아무것도 되돌리지 않음·ff_misapplied" '[ $RC = 1 ] && [ "$(cat "$R/src/a.txt")" = user-ignored-data ] && has "사람이 확인" && sget units.U1.ff_misapplied >/dev/null'
-setup f1b "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start
+setup f1b "$OKCMD" "$TWO"; must init "$H"; st U1
 rm "$(wt U1)/src/a.txt"; must unit "$H" U1 commit -m delete-a; base=$(sget units.U1.base_head); cm=$(sget units.U1.commit)
 git -C "$R" branch other; printf '/src/a.txt\n' >> "$R/.git/info/exclude"
 wrap ignored-existing unit "$H" U1 merge
 t "#1 되돌림: 되돌릴 ref 가 체크아웃돼 있으면 ref·파일 그대로·ff_misapplied" '[ $RC = 1 ] && has "자동으로 되돌리지 않는다" && [ "$(cat "$R/src/a.txt")" = user-ignored-data ] && [ "$(git -C "$R" rev-parse other)" = "$cm" ] && [ "$(git -C "$R" rev-parse main)" = "$base" ] && [ "$(sget units.U1.ff_misapplied.cm)" = "$cm" ]'
 
 # #2 워크트리 정체성을 확인한 뒤에만 워크트리에서 git 을 돌린다
-setup f2 "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start
+setup f2 "$OKCMD" "$TWO"; must init "$H"; st U1
 git -C "$R" worktree remove "$(wt U1)"; mkdir -p "$(wt U1)"
 printf 'staged-only-version\n' > "$R/other.txt"; git -C "$R" add other.txt; printf 'working-version\n' > "$R/other.txt"
 eg unit "$H" U1 checkwt
@@ -544,7 +552,7 @@ eg unit "$H" U1 cleanup
 t "#4 로그 이동: .relay-logs 가 링크 → 옮기지 않고 blocked·기록" '[ $RC = 1 ] && [ "$(cat "$TMP/user-data/data.txt")" = precious ] && [ ! -e "$P/U1/logs/data.txt" ] && sget units.U1.logs_error >/dev/null && [ -e "$(wt U1)" ] && [ "$(sget units.U1.stage)" = merged ]'
 
 # #5 이미 만든 커밋도 검사한다. 이 세션이 커밋 의도를 남기지 않은 커밋은 받지 않는다
-setup f5 "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start
+setup f5 "$OKCMD" "$TWO"; must init "$H"; st U1
 mkdir -p "$(wt U1)/.claude"; printf '{}\n' > "$(wt U1)/.claude/settings.json"
 git -C "$(wt U1)" add .claude/settings.json && git -C "$(wt U1)" commit -q -m outside-gate   # Worker 가 직접 커밋
 eg unit "$H" U1 recover
@@ -581,7 +589,9 @@ sh_ "$R/parent.sh" './child.sh & wait'
 git -C "$R" add parent.sh child.sh && git -C "$R" commit -q -m child-fixture
 mkhandoff '  cmd: ./parent.sh
   timeout: 1s' "$(row U1 src/a.txt)"
-must init "$H"; rm -f "$MARK" "$PIDF"; eg run "$H"
+must init "$H"; rm -f "$MARK" "$PIDF"
+sleep 5   # 앞 시험들이 phase.sh 로 파일을 몰아 쓴 직후에는 이 맥에서 새 스크립트 시작이 1초 넘게 늦었다(쉬면 사라진다). 제한 1초 시험이라 잠깐 쉰다
+eg run "$H"
 t "#7 제한 시간: 남은 자식 → 끝내지 않고 timeout-survivors 로 멈춤·기록" '[ $RC = 1 ] && has "timeout-survivors" && [ "$(sget stopped_reason)" = timeout-survivors ] && grep -q "^중단: timeout-survivors$" "$H" && grep -qF "남은 프로세스" "$P/goal/1.log"'
 t "B6 제한 시간: survivors 배열에 그 자식의 PID 가 있다" 'survivor_pid "$PIDF"'
 sleep 5
@@ -629,10 +639,10 @@ setup f11 "$OKCMD" "$(row U1 'src/a b.txt')"; eg check "$H"
 t "#11 공백 경로: 따옴표 없는 공백 → 모호해 check 거부" '[ $RC = 1 ] && has "모호한 경로"'
 eg init "$H"
 t "#11 공백 경로: init 도 거부" '[ $RC = 1 ] && [ ! -e "$P/goal/state.json" ]'
-mkhandoff "$OKCMD" "$(row U1 '"src/a b.txt"')"; must init "$H"; must unit "$H" U1 start
+mkhandoff "$OKCMD" "$(row U1 '"src/a b.txt"')"; must init "$H"; st U1
 printf 'outside\n' > "$(wt U1)/b.txt"; eg unit "$H" U1 commit -m wrong
 t "#11 공백 경로: 따옴표로 감싸면 한 경로라 루트 b.txt 는 범위 밖" '[ $RC = 1 ] && has "pathspec 밖 b.txt"'
-rm "$(wt U1)/b.txt"; must clear-stop "$H"; setrow U1 진행
+rm "$(wt U1)/b.txt"; must clear-stop "$H"; pm resume U1
 printf 'spaced\n' > "$(wt U1)/src/a b.txt"; must unit "$H" U1 commit -m U1; must unit "$H" U1 merge
 t "#11 공백 경로: 공백 든 파일이 커밋·머지된다" '[ "$(cat "$R/src/a b.txt")" = spaced ] && rowis U1 완료'
 setup f11c "$OKCMD" "$(row U1 '"src/a b.txt"' 완료)
@@ -708,6 +718,8 @@ sleep 2; eg unit "$H" U1 recover
 t "B2' 머지 예약: recover → cleanup, 행 완료·expected_tip=cm·merge_intent 제거" '[ $RC = 0 ] && [ "$(lastline)" = cleanup ] && rowis U1 완료 && [ "$(sget repos.h1.expected_tip)" = "$cm" ] && [ "$(sget units.U1.stage)" = merged ] && absent units.U1.merge_intent'
 must unit "$H" U1 cleanup
 t "B2' 머지 예약: 이어서 cleanup 정상" '[ "$(sget units.U1.stage)" = cleaned ]'
+eg unit "$H" U1 recover
+t "U6 중복 없음: 머지 기록 실패 뒤 recover 가 완료를 적고, 다시 recover 해도 done 이벤트는 한 번" '[ "$OUT" = done ] && [ "$(ndone U1)" = 1 ]'
 # 잘못 전진한 ff + 잠금 실패(ff_misapplied 조차 못 적음) → recover 가 merge_intent 로 알아보고 ff_misapplied 를 적는다
 setup h2 "$OKCMD" "$TWO"; must init "$H"; work U1; must unit "$H" U1 commit -m U1
 cm=$(sget units.U1.commit); base=$(sget units.U1.base_head)
@@ -891,6 +903,74 @@ t "B7 eval.md 원자성: 쓰는 도중 실패(파일 크기 한도) → 기존 �
 t "B7 기록 순서: 그때 state.last_eval 은 바뀌지 않는다" '[ "$(sget last_eval)" = null ]'
 ln "$P/goal/eval.md" "$TMP/g7.link"; cp "$P/goal/eval.md" "$TMP/g7.before2"; eg run "$H"
 t "B7 eval.md 원자성: 성공 때도 새 파일로 바꾼다(옛 파일을 잡은 쪽은 바이트 그대로)" '[ $RC = 0 ] && cmp -s "$TMP/g7.link" "$TMP/g7.before2" && grep -q "^- 이전 이력$" "$P/goal/eval.md" && [ "$(grep -c "^- 반복 " "$P/goal/eval.md")" = 1 ]'
+
+# ── U6 auto 와 phase.sh: 같은 단계 명령·같은 기록 ─────────
+# 증거 없이 commit
+setup u6a "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start; printf 'a1\n' > "$(wt U1)/src/a.txt"
+eg unit "$H" U1 commit -m U1
+t "U6 커밋: 검수 단계·증거 없이 commit → 거부·커밋 0·중단 아님" '[ $RC = 1 ] && has "검수 단계가 아니다" && [ "$(brtip U1)" = "$(sget units.U1.base_head)" ] && [ -z "$(sget stopped_reason)" ] && [ "$(sget units.U1.stage)" = started ]'
+# 등급·화면 열이 있는 14열 상태표, 등급 일반
+setup u6b "$OKCMD" "$(row U1 src/a.txt)"
+python3 -I - "$H" <<'PYT'
+import sys
+p = sys.argv[1]
+L = open(p, encoding='utf-8').read().split('\n')
+for i, l in enumerate(L):
+    if l.startswith('| 단위 '):
+        L[i] = l.replace('| 내용 |', '| 내용 | 등급 |') + ' 화면 |'
+    elif l.startswith('|---'):
+        L[i] = l + '---|---|'
+    elif l.startswith('| U1 '):
+        L[i] = l.replace('| 내용 |', '| 내용 | 일반 |', 1) + ' ✘ |'
+open(p, 'w', encoding='utf-8').write('\n'.join(L))
+PYT
+must init "$H"; must unit "$H" U1 start; pm check U1 fail-first -- false
+printf 'a1\n' > "$(wt U1)/src/a.txt"; pm move U1 verify; pm check U1 cmd -- true; pm move U1 review
+eg unit "$H" U1 commit -m U1
+t "U6 등급: review·mutation 기록이 없으면 commit 거부·커밋 0" '[ $RC = 1 ] && has "review, mutation" && [ "$(brtip U1)" = "$(sget units.U1.base_head)" ]'
+pm check U1 review --pass --reason 검수; pm check U1 mutation --pass --reason 변이
+must unit "$H" U1 commit -m U1; must unit "$H" U1 merge; must unit "$H" U1 cleanup
+t "U6 등급: 14열 상태표로 끝까지(머지·행 완료·커밋 칸·등급 칸 보존·done 이벤트 한 번)" '[ "$(git -C "$R" show HEAD:src/a.txt)" = a1 ] && rowis U1 완료 && rowis U1 "u6b $(git -C "$R" rev-parse --short=7 HEAD)" && rowof U1 | grep -F "| 일반 |" >/dev/null && [ "$(ndone U1)" = 1 ]'
+# 열린 단위 후 정지 지시
+setup u6c "$OKCMD" "$TWO"; must init "$H"; pm direct stop-after
+eg unit "$H" U1 start
+t "U6 정지 지시: 열린 stop-after → start 거부·워크트리 없음·중단 아님" '[ $RC = 1 ] && has "단위 후 정지" && [ ! -e "$(wt U1)" ] && ! brtip U1 >/dev/null && [ -z "$(sget stopped_reason)" ]'
+pm direct resume; eg unit "$H" U1 start
+t "U6 정지 지시: direct resume 뒤 start 된다" '[ $RC = 0 ] && [ -d "$(wt U1)" ] && rowis U1 진행'
+# 머지 뒤 다시 불러도 중복 기록 없음
+setup u6d "$OKCMD" "$TWO"; must init "$H"; work U1; must unit "$H" U1 commit -m U1; must unit "$H" U1 merge
+eg unit "$H" U1 recover; a=$OUT; must unit "$H" U1 cleanup; eg unit "$H" U1 recover; b=$OUT; eg unit "$H" U1 start
+t "U6 중복 없음: 머지 뒤 recover·cleanup·recover·start → done·커밋 기록 한 번" '[ "$a" = cleanup ] && [ "$b" = done ] && [ $RC = 2 ] && [ "$(ndone U1)" = 1 ] && [ "$(evs | grep -cF "\"unit.commit\"")" = 1 ]'
+# blocked 는 unit.halt 이벤트로 남고 phase.sh resume 으로 푼다
+setup u6e "$OKCMD" "$TWO"; must init "$H"; printf 'z\n' >> "$R/src/a.txt"; eg unit "$H" U1 start
+t "U6 blocked: unit.halt 이벤트·상태 칸 blocked·중단 줄" '[ $RC = 1 ] && rowis U1 blocked && grep -q "^중단: blocked:U1$" "$H" && evs | grep -F "\"unit.halt\"" | grep -qF "\"reason\": \"blocked:U1\""'
+eg unit "$H" U1 start
+t "U6 blocked: 같은 이유로 다시 막혀도 unit.halt 를 다시 쓰지 않는다" '[ $RC = 1 ] && [ "$(evs | grep -cF "\"unit.halt\"")" = 1 ]'
+printf 'a\n' > "$R/src/a.txt"; must clear-stop "$H"; eg unit "$H" U1 start
+t "U6 blocked: phase.sh resume 전에는 start 거부" '[ $RC = 1 ] && has "멈춘 단위" && [ ! -e "$(wt U1)" ] && [ -z "$(sget stopped_reason)" ]'
+pm resume U1; eg unit "$H" U1 start
+t "U6 blocked: phase.sh resume 뒤 이어 간다" '[ $RC = 0 ] && rowis U1 진행 && [ -d "$(wt U1)" ]'
+# 모르는 열
+# 머지 전에 증거·멈춤을 본다(머지한 뒤 완료 기록이 거부되면 git 과 기록이 어긋난다)
+setup u6g "$OKCMD" "$TWO"; must init "$H"; work U1; must unit "$H" U1 commit -m U1; before=$(git -C "$R" rev-parse HEAD)
+pm halt U1 interrupt; eg unit "$H" U1 merge
+t "U6 머지: 커밋 뒤 멈춘 단위 → merge 거부·공유 브랜치 그대로·중단 아님" '[ $RC = 1 ] && has "멈춘 단위" && [ "$(git -C "$R" rev-parse HEAD)" = "$before" ] && [ "$(sget units.U1.stage)" = committed ] && [ -z "$(sget stopped_reason)" ]'
+pm resume U1; must unit "$H" U1 merge
+t "U6 머지: resume 뒤 merge → 행 완료·done 한 번" 'rowis U1 완료 && [ "$(ndone U1)" = 1 ]'
+setup u6h "$OKCMD" "$TWO"; must init "$H"; must unit "$H" U1 start; before=$(git -C "$R" rev-parse HEAD); eg unit "$H" U1 merge
+t "U6 머지: 구현 단계에서 커밋 없이 merge → 거부·stage 그대로" '[ $RC = 1 ] && has "검수 단계가 아니다" && [ "$(sget units.U1.stage)" = started ] && [ "$(git -C "$R" rev-parse HEAD)" = "$before" ]'
+# 시작 전에 막힌 단위의 discard: phase.sh 가 고친 상태표를 다시 읽어야 한다
+setup u6i "$OKCMD" "$TWO"; must init "$H"; printf 'z\n' >> "$R/src/a.txt"; eg unit "$H" U1 start
+"$REALGIT" -C "$R" show HEAD:src/a.txt > "$R/src/a.txt"   # 막힌 원인(더티 파일)을 되돌린다
+must clear-stop "$H"; eg unit "$H" U1 discard
+t "U6 discard: 시작 전에 막힌 단위 → 멈춤을 풀고 대기로(행 미착수)" '[ $RC = 0 ] && rowis U1 미착수'
+# 손으로 진행이라 적은 행(이벤트 없음): 시작하지 않는다. 열린 정지 지시가 있어도 같다
+setup u6j "$OKCMD" "$TWO"; must init "$H"; setrow U1 진행; pm direct stop-after; eg unit "$H" U1 start
+t "U6 시작: 손으로 진행이라 적은 행 → start 거부·워크트리 없음·중단 아님" '[ $RC = 1 ] && has "phase.sh move 거부" && [ ! -e "$(wt U1)" ] && ! brtip U1 >/dev/null && [ -z "$(sget stopped_reason)" ]'
+setup u6f "$OKCMD" "$(row U1 src/a.txt)"
+perl -pi -e 's/\| 커밋 \|$/| 커밋 | 비고 |/; s/^(\|---.*)$/$1---|/; s/^(\| U1 .*)$/$1 x |/' "$H"
+eg check "$H"
+t "U6 머리글: 모르는 열(비고)이 있으면 오류" '[ $RC = 1 ] && has "머리글"'
 
 echo "통과 $PASS · 실패 $FAIL"
 [ "$FAIL" -eq 0 ]

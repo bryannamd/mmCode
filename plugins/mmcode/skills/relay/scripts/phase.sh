@@ -8,7 +8,9 @@
 # 예외: 열린 단위 후 정지 지시로 move <단위> build 를 처음 거부할 때는 directive.applied 와 그 단위의 unit.halt 를 쓴다.
 # gate 는 도구 호출 전 훅용이다: 열린 즉시 중단 지시가 있으면 종료 코드 2. 이벤트 파일이 없거나 내부 오류면 0(막지 않는 쪽).
 # 상태표에 선택 열 `등급`(가벼움·일반·고위험)·`화면`(✔)이 있으면 등급별 증거(계획 3.4절)가 없을 때 전환을 거부한다. 열이 없으면 적용하지 않는다.
-# 근거: docs/plans/orchestration-plan.md 3.2~3.5절, 4.1~4.2절, 4.4절. 외부 의존 없음(bash + python3 + git).
+# ready 는 단위가 검수 단계이고 멈추지 않았고 완료에 필요한 증거(커밋 기록 제외)가 있는지만 본다. 이벤트를 쓰지 않는다(relay auto 의 커밋 전 검사).
+# move <단위> queued --reason 은 구현·검증·검수에서 대기로 되돌린다(relay auto 의 unit discard).
+# 근거: docs/plans/orchestration-plan.md 3.2~3.5절, 4.1~4.4절. 외부 의존 없음(bash + python3 + git).
 set -euo pipefail
 command -v python3 >/dev/null 2>&1 || { echo "python3 이 없다" >&2; exit 2; }
 command -v git >/dev/null 2>&1 || { echo "git 이 없다" >&2; exit 2; }
@@ -19,7 +21,8 @@ import contextlib, fcntl, json, os, re, shlex, subprocess, sys, tempfile, traceb
 from datetime import datetime
 
 USAGE = '''사용: phase.sh <하위 명령> <HANDOFF.md|프로젝트 폴더> [인자...]   (폴더는 ask·answer·direct·applied·rejected·gate·show 만)
-  move <단위> <단계> [--reason <사유>]     단계: queued build verify review done
+  move <단위> <단계> [--reason <사유>]     단계: queued build verify review done. 대기(queued)로 되돌리기는 --reason 필수
+  ready <단위>                             검수 단계·멈춤 없음·완료 증거(커밋 기록 제외)가 다 있으면 OK. 이벤트를 쓰지 않는다
   check <단위> <종류> [--reason <사유>] [--evidence <경로>] [--pass|--fail] [-- <명령...>]
                                            종류: cmd(명령 필수) manual fail-first review mutation cross-review coverage ui-review
                                            fail-first 는 명령이 실패(종료 코드 0 아님)해야 통과다. 명령 없는 면제는 --pass --reason "해당 없음: <이유>"(고위험은 거부)
@@ -39,8 +42,9 @@ USAGE = '''사용: phase.sh <하위 명령> <HANDOFF.md|프로젝트 폴더> [�
 
 NOCHANGE = '없음(변경 없음)'
 PHASES = ['queued', 'build', 'verify', 'review', 'done']
-NEXT = {'queued': ['build'], 'build': ['verify'], 'verify': ['review', 'build'], 'review': ['done', 'build'], 'done': []}
-BACK = {('verify', 'build'), ('review', 'build')}
+NEXT = {'queued': ['build'], 'build': ['verify', 'queued'], 'verify': ['review', 'build', 'queued'],
+        'review': ['done', 'build', 'queued'], 'done': []}
+BACK = {('verify', 'build'), ('review', 'build'), ('build', 'queued'), ('verify', 'queued'), ('review', 'queued')}
 PHASE_KO = {'queued': '대기', 'build': '구현', 'verify': '검증', 'review': '검수', 'done': '완료'}
 STATUS_KO = {'queued': '미착수', 'build': '진행', 'verify': '진행', 'review': '진행', 'done': '완료'}
 KINDS = ['cmd', 'manual', 'fail-first', 'review', 'mutation', 'cross-review', 'coverage', 'ui-review']
@@ -526,59 +530,74 @@ def parse_reason(rest):
     return rest[1]
 
 
+def judge(c, tbl, evs, unit, to, reason, need_commit=True):
+    # 전환 판정. 안 되면 Refused, 되면 쓸 unit.phase 이벤트. ready 는 need_commit=False 로 같은 판정을 쓴다.
+    row = require_unit(tbl, unit, evs)
+    grade = tbl.grade(row)
+    s = unit_state(evs, unit)
+    frm = s['phase']
+    if s['halt']:
+        raise Refused(f'{unit} 은 멈춘 단위다({s["halt"]}). resume 뒤에 옮긴다')
+    if to not in NEXT[frm]:
+        ok = ', '.join(NEXT[frm]) or '없음'
+        raise Refused(f'{unit} {frm}→{to} 는 안 된다. {frm} 에서 갈 수 있는 단계: {ok}')
+    if (frm, to) in BACK and not reason:
+        raise Refused(f'{frm}→{to} 되돌아가기는 --reason 이 필요하다')
+    if frm == 'queued':
+        stops = [x for x in directives(load_events(c, every=True)).values()
+                 if x['kind'] == 'stop-after' and x['active'] and relevant(x, c.plan)]
+        if stops:
+            new = [('directive.applied', '-', {'id': x['d']['id']}, x['plan']) for x in stops if not x['applied']]
+            if new:
+                new.append(('unit.halt', unit, {'reason': 'stop-after', 'directive': stops[0]['d']['id']}))
+            ids = ', '.join(x['d']['id'] for x in stops)
+            raise Refused(f'단위 후 정지 지시 {ids} 가 열려 있다. {unit} 을 시작하지 않는다. 계속하려면 사용자가 direct resume 을 실행한다', new)
+        pre = [t for t in re.split(r'[,\s]+', tbl.text(row, '선행')) if t and t not in ('—', '-')]
+        pend = [f'{p}({PHASE_KO[ph]})' for p in pre for ph in [known_phase(tbl, evs, p)] if ph != 'done']
+        if pend:
+            raise Refused('선행 단위가 완료가 아니다: ' + ', '.join(pend))
+    elif frm == 'verify' and to == 'review':
+        last = {}
+        for d in s['checks']:
+            last[(d.get('kind'), d.get('command') or d.get('reason'))] = bool(d.get('pass'))
+        if not last:
+            raise Refused('검증 단계 진입 뒤의 검사 결과가 없다')
+        bad = [f'{k[0]}' + (f' ({k[1]})' if k[1] else '') for k, ok in last.items() if not ok]
+        if bad:
+            raise Refused('통과하지 못한 검사가 있다: ' + ', '.join(bad))
+    elif frm == 'review' and to == 'done' and need_commit and not s['commits']:
+        raise Refused('구현 단계 진입 뒤의 커밋 기록이 없다')
+    miss = missing(grade, tbl.screen(row), frm, to, s)
+    if miss:
+        raise Refused(f'{unit} 에 빠진 증거: ' + ', '.join(miss))
+    data = {'from': frm, 'to': to}
+    if reason:
+        data['reason'] = reason
+    return 'unit.phase', unit, data
+
+
 def cmd_move(c, rest):
     need(rest, 2, exact=False)
     unit, to = rest[0], rest[1]
     reason = parse_reason(rest[2:])
     if to not in PHASES:
         raise Usage(f'알 수 없는 단계: {to} (queued build verify review done)')
+    transact(c, lambda tbl, evs: judge(c, tbl, evs, unit, to, reason))
+    print(f'OK: {unit} {to} 로 옮겼다')
 
-    def fn(tbl, evs):
-        row = require_unit(tbl, unit, evs)
-        grade = tbl.grade(row)
-        s = unit_state(evs, unit)
-        frm = s['phase']
-        if s['halt']:
-            raise Refused(f'{unit} 은 멈춘 단위다({s["halt"]}). resume 뒤에 옮긴다')
-        if to not in NEXT[frm]:
-            ok = ', '.join(NEXT[frm]) or '없음'
-            raise Refused(f'{unit} {frm}→{to} 는 안 된다. {frm} 에서 갈 수 있는 단계: {ok}')
-        if (frm, to) in BACK and not reason:
-            raise Refused(f'{frm}→{to} 되돌아가기는 --reason 이 필요하다')
-        if frm == 'queued':
-            stops = [x for x in directives(load_events(c, every=True)).values()
-                     if x['kind'] == 'stop-after' and x['active'] and relevant(x, c.plan)]
-            if stops:
-                new = [('directive.applied', '-', {'id': x['d']['id']}, x['plan']) for x in stops if not x['applied']]
-                if new:
-                    new.append(('unit.halt', unit, {'reason': 'stop-after', 'directive': stops[0]['d']['id']}))
-                ids = ', '.join(x['d']['id'] for x in stops)
-                raise Refused(f'단위 후 정지 지시 {ids} 가 열려 있다. {unit} 을 시작하지 않는다. 계속하려면 사용자가 direct resume 을 실행한다', new)
-            pre = [t for t in re.split(r'[,\s]+', tbl.text(row, '선행')) if t and t not in ('—', '-')]
-            pend = [f'{p}({PHASE_KO[ph]})' for p in pre for ph in [known_phase(tbl, evs, p)] if ph != 'done']
-            if pend:
-                raise Refused('선행 단위가 완료가 아니다: ' + ', '.join(pend))
-        elif frm == 'verify' and to == 'review':
-            last = {}
-            for d in s['checks']:
-                last[(d.get('kind'), d.get('command') or d.get('reason'))] = bool(d.get('pass'))
-            if not last:
-                raise Refused('검증 단계 진입 뒤의 검사 결과가 없다')
-            bad = [f'{k[0]}' + (f' ({k[1]})' if k[1] else '') for k, ok in last.items() if not ok]
-            if bad:
-                raise Refused('통과하지 못한 검사가 있다: ' + ', '.join(bad))
-        elif frm == 'review' and to == 'done' and not s['commits']:
-            raise Refused('구현 단계 진입 뒤의 커밋 기록이 없다')
-        miss = missing(grade, tbl.screen(row), frm, to, s)
-        if miss:
-            raise Refused(f'{unit} 에 빠진 증거: ' + ', '.join(miss))
-        data = {'from': frm, 'to': to}
-        if reason:
-            data['reason'] = reason
-        return 'unit.phase', unit, data
 
-    transact(c, fn)
-    print(f'OK: {unit} {rest[1]} 로 옮겼다')
+def cmd_ready(c, rest):
+    # 읽기만 한다: 이벤트도 상태표도 쓰지 않는다.
+    need(rest, 1)
+    unit = rest[0]
+    with locked(c):
+        tbl, evs = Table(c), load_events(c)
+        require_unit(tbl, unit, evs)
+        ph = unit_state(evs, unit)['phase']
+        if ph != 'review':
+            raise Refused(f'{unit} 은 검수 단계가 아니다(지금 {ph})')
+        judge(c, tbl, evs, unit, 'done', None, need_commit=False)
+    print(f'OK: {unit} 커밋해도 된다(검수 단계, 증거 있음)')
 
 
 def cmd_check(c, rest):
@@ -868,7 +887,7 @@ def cmd_gate(c, rest):
         sys.exit(2)
 
 
-CMDS = {'move': cmd_move, 'check': cmd_check, 'commit': cmd_commit, 'halt': cmd_halt, 'resume': cmd_resume, 'show': cmd_show,
+CMDS = {'move': cmd_move, 'ready': cmd_ready, 'check': cmd_check, 'commit': cmd_commit, 'halt': cmd_halt, 'resume': cmd_resume, 'show': cmd_show,
         'ask': cmd_ask, 'answer': cmd_answer, 'direct': cmd_direct, 'gate': cmd_gate,
         'applied': lambda c, rest: close_directive(c, rest, 'directive.applied'),
         'rejected': lambda c, rest: close_directive(c, rest, 'directive.rejected')}
