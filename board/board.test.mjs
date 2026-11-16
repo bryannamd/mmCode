@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import board from './board.js';
 
 const ph = (plan, unit, to) => ({ type: 'unit.phase', plan, unit, data: { to } });
@@ -80,4 +81,58 @@ test('요약 문구: 멈춘 단위가 없으면 빈 문자열, 있으면 이유�
     halt('alpha', 'A4', 'decision'), halt('alpha', 'A6', 'blocked:A6'),
   ]);
   assert.equal(board.summarize(r.halted), '멈춘 단위 2개: alpha A4 (결정 대기), alpha A6 (막힘)');
+});
+
+const ask = (plan, unit, id, extra = {}) => ({ type: 'decision.ask', plan, unit, data: { id, question: id + ' 질문', options: [], ...extra } });
+const answer = (plan, unit, id, a, extra = {}) => ({ type: 'decision.answer', plan, unit, data: { id, answer: a, by: 'user', ...extra } });
+const ids = (list) => list.map((d) => d.id);
+
+test('답한 결정은 열린 목록에 남지 않고 답한 목록으로 간다', () => {
+  const r = board.reduce([ask('a', '-', 'D1'), ask('a', '-', 'D2'), answer('a', '-', 'D1', '가', { by: 'planner', undo: '되돌림' })]);
+  assert.deepEqual(ids(r.decisions.open), ['D2']);
+  assert.deepEqual(r.decisions.answered, [
+    { id: 'D1', plan: 'a', unit: '-', question: 'D1 질문', answer: '가', by: 'planner', undo: '되돌림' },
+  ]);
+});
+
+test('다른 계획의 결정이 ID 로 올바로 짝지어진다', () => {
+  const r = board.reduce([
+    ask('a', 'U1', 'D1'), ask('b', 'U1', 'D2', { recommend: '나', impact: '영향', options: ['가', '나'] }),
+    answer('b', 'U1', 'D1', '가'),
+  ]);
+  assert.deepEqual(ids(r.decisions.open), ['D2']);
+  assert.equal(r.decisions.answered[0].id, 'D1');
+  assert.equal(r.decisions.answered[0].plan, 'a');
+  assert.deepEqual(r.decisions.open[0], {
+    id: 'D2', plan: 'b', unit: 'U1', question: 'D2 질문', recommend: '나', impact: '영향', options: ['가', '나'],
+  });
+});
+
+test('요청 없는 답은 무시한다', () => {
+  const r = board.reduce([answer('a', '-', 'D9', '가'), ask('a', '-', 'D1')]);
+  assert.deepEqual(ids(r.decisions.open), ['D1']);
+  assert.deepEqual(r.decisions.answered, []);
+});
+
+test('단계 이벤트가 없는 계획의 결정도 나오고 순서는 요청 순서다', () => {
+  const r = board.reduce([ask('-', '-', 'D2'), ask('x', '-', 'D1'), ph('a', 'U1', 'build')]);
+  assert.deepEqual(ids(r.decisions.open), ['D2', 'D1']);
+  assert.deepEqual(r.plans.map((p) => p.plan), ['a']);
+});
+
+test('답 명령은 따옴표 등이 든 답도 셸에서 글자 그대로 전달된다', () => {
+  const answers = ["그대로", "it's \"x\"", "$HOME `date` \\n", "줄1\n줄2", "'", "''a''"];
+  for (const a of answers) {
+    const cmd = board.answerCommand('D4', a);
+    assert.ok(cmd.startsWith('bash plugins/mmcode/skills/relay/scripts/phase.sh answer . D4 --answer '), cmd);
+    const arg = cmd.slice(cmd.indexOf('--answer ') + '--answer '.length);
+    assert.equal(execFileSync('sh', ['-c', 'printf %s ' + arg]).toString(), a);
+  }
+});
+
+test('선택지 없는 결정의 표시 문자열에는 따옴표로 감싼 <답> 이 없다', () => {
+  const t = board.answerTemplate('D8');
+  assert.ok(t.startsWith('bash plugins/mmcode/skills/relay/scripts/phase.sh answer . D8 --answer '), t);
+  assert.ok(t.endsWith('--answer <답>'), t);
+  assert.ok(!t.includes("'"), t);
 });

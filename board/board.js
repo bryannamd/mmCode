@@ -1,6 +1,7 @@
 (function (root) {
   var PHASES = ['queued', 'build', 'verify', 'review', 'done'];
   var PHASE_KO = { queued: '대기', build: '구현', verify: '검증', review: '검수', done: '완료' };
+  var BY_KO = { user: '사용자', planner: '계획자', 'cross-review': '교차 검토' };
   var HALT_KO = { decision: '결정 대기', 'stop-after': '단위 후 정지', interrupt: '즉시 중단' };
 
   function isObj(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
@@ -14,6 +15,35 @@
       if (isObj(v)) events.push(v); else skipped++;
     });
     return { events: events, skipped: skipped };
+  }
+
+  function str(v) { return typeof v === 'string' ? v : ''; }
+
+  // 정본: phase.sh 의 decisions. 결정 ID 는 파일 전체에서 하나이고 요청 없는 답은 무시한다.
+  function reduceDecisions(events) {
+    var byId = new Map();
+    events.forEach(function (e) {
+      var d = isObj(e.data) ? e.data : {};
+      if (typeof d.id !== 'string' || !d.id) return;
+      if (e.type === 'decision.ask') {
+        byId.set(d.id, { ask: d, plan: str(e.plan) || '-', unit: str(e.unit) || '-', answer: null });
+      } else if (e.type === 'decision.answer' && byId.has(d.id)) {
+        byId.get(d.id).answer = d;
+      }
+    });
+    var res = { open: [], answered: [] };
+    byId.forEach(function (x, id) {
+      var base = { id: id, plan: x.plan, unit: x.unit, question: str(x.ask.question) };
+      if (x.answer) {
+        base.answer = str(x.answer.answer); base.by = str(x.answer.by); base.undo = str(x.answer.undo);
+        res.answered.push(base);
+      } else {
+        base.recommend = str(x.ask.recommend); base.impact = str(x.ask.impact);
+        base.options = Array.isArray(x.ask.options) ? x.ask.options.filter(function (o) { return typeof o === 'string'; }) : [];
+        res.open.push(base);
+      }
+    });
+    return res;
   }
 
   // 규칙의 정본: phase.sh 의 unit_state
@@ -44,7 +74,7 @@
         if (u.halt) halted.push({ plan: p.plan, unit: u.unit, halt: u.halt });
       });
     });
-    return { plans: out, halted: halted };
+    return { plans: out, halted: halted, decisions: reduceDecisions(events) };
   }
 
   // blocked:<단위> 의 뒤는 그 단위 자신의 이름이다
@@ -53,6 +83,17 @@
     if (reason === 'halt' || reason.indexOf('blocked:') === 0) return '막힘';
     return '막힘 (' + reason + ')';
   }
+
+  function sq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
+  function answerPrefix(id) {
+    return 'bash plugins/mmcode/skills/relay/scripts/phase.sh answer . ' + (/^[\w.-]+$/.test(id) ? id : sq(id)) + ' --answer ';
+  }
+
+  function answerCommand(id, answer) { return answerPrefix(id) + sq(answer); }
+
+  // 선택지가 없는 결정에 보여 주는 글자. 따옴표가 없어서 그대로 붙여 넣으면 셸에서 실패한다.
+  function answerTemplate(id) { return answerPrefix(id) + '<답>'; }
 
   function summarize(halted) {
     if (!halted.length) return '';
@@ -63,12 +104,6 @@
 
   function render(el, result, skipped) {
     el.textContent = '';
-    function node(tag, cls, text) {
-      var n = document.createElement(tag);
-      if (cls) n.className = cls;
-      if (text !== undefined) n.textContent = text;
-      return n;
-    }
     if (skipped) el.appendChild(node('p', 'note', '건너뛴 줄 ' + skipped + '개 (깨졌거나 객체가 아님)'));
     if (!result.plans.length) { el.appendChild(node('p', 'note', '표시할 단위가 없다.')); return; }
     result.plans.forEach(function (p) {
@@ -93,7 +128,91 @@
     });
   }
 
-  var api = { parse: parse, reduce: reduce, render: render, summarize: summarize };
+  function node(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+
+  function whereText(d) { return '계획 ' + d.plan + (d.unit === '-' ? '' : ' · 단위 ' + d.unit); }
+
+  // 선택지 한 줄(글자와 복사 버튼). 명령 글자는 접어 두고, 복사에 실패하면 펼쳐서 고르게 한다.
+  function optionRow(parent, id, answer, recommended) {
+    var cmd = answerCommand(id, answer);
+    var opt = node('div', 'option');
+    var row = node('div', 'optrow');
+    var t = node('p', 'opt', answer);
+    if (recommended) t.appendChild(node('span', 'tag', '추천'));
+    var btn = node('button', 'btn', '명령 복사');
+    btn.type = 'button';
+    var msg = node('span', 'copied');
+    msg.setAttribute('role', 'status');
+    row.appendChild(t);
+    row.appendChild(btn);
+    row.appendChild(msg);
+    var det = node('details', 'cmddet');
+    det.appendChild(node('summary', '', '명령 보기'));
+    var pre = node('pre', 'cmd', cmd);
+    det.appendChild(pre);
+    btn.addEventListener('click', function () {
+      function failed() {
+        det.open = true;
+        window.getSelection().selectAllChildren(pre);
+        msg.textContent = '복사하지 못했다. 명령을 직접 복사한다';
+      }
+      if (!navigator.clipboard) return failed();
+      navigator.clipboard.writeText(cmd).then(function () {
+        msg.textContent = '복사했다';
+        setTimeout(function () { msg.textContent = ''; }, 2000);
+      }, failed);
+    });
+    opt.appendChild(row);
+    opt.appendChild(det);
+    parent.appendChild(opt);
+  }
+
+  // 열린 결정은 openEl 에, 답한 결정은 접어서 answeredEl 에 그린다. 없으면 구역을 만들지 않는다.
+  function renderDecisions(openEl, answeredEl, dec) {
+    openEl.textContent = '';
+    answeredEl.textContent = '';
+    openEl.hidden = !dec.open.length;
+    answeredEl.hidden = !dec.answered.length;
+    if (dec.open.length) openEl.appendChild(node('p', 'opencount', '열린 결정 ' + dec.open.length + '개'));
+    dec.open.forEach(function (d) {
+      var sec = node('section', 'decision');
+      sec.appendChild(node('h2', '', '결정 필요 ' + d.id));
+      sec.appendChild(node('p', 'where', whereText(d)));
+      sec.appendChild(node('p', 'question', d.question));
+      if (d.recommend) sec.appendChild(node('p', '', '추천: ' + d.recommend));
+      if (d.impact) sec.appendChild(node('p', '', '영향: ' + d.impact));
+      if (d.options.length) {
+        d.options.forEach(function (o) { optionRow(sec, d.id, o, o === d.recommend); });
+      } else {
+        var opt = node('div', 'option');
+        opt.appendChild(node('p', 'opt', '아래 명령의 <답> 자리에 답을 작은따옴표로 감싸 적어 실행한다'));
+        opt.appendChild(node('pre', 'cmd', answerTemplate(d.id)));
+        sec.appendChild(opt);
+      }
+      openEl.appendChild(sec);
+    });
+    if (dec.answered.length) {
+      var det = node('details', 'answered');
+      det.appendChild(node('summary', '', '답한 결정 ' + dec.answered.length + '개'));
+      dec.answered.forEach(function (d) {
+        var it = node('div', 'adec');
+        it.appendChild(node('p', 'name', d.id + ' · ' + whereText(d)));
+        it.appendChild(node('p', '', '질문: ' + d.question));
+        it.appendChild(node('p', '', '답: ' + d.answer));
+        it.appendChild(node('p', '', '정한 쪽: ' + (BY_KO[d.by] || d.by)));
+        if (d.undo) it.appendChild(node('p', '', '되돌리는 방법: ' + d.undo));
+        det.appendChild(it);
+      });
+      answeredEl.appendChild(det);
+    }
+  }
+
+  var api = { parse: parse, reduce: reduce, render: render, summarize: summarize, answerCommand: answerCommand, answerTemplate: answerTemplate, renderDecisions: renderDecisions };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.board = api;
 })(typeof window !== 'undefined' ? window : globalThis);
