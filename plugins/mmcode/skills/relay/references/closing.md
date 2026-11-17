@@ -1,5 +1,7 @@
 # 계획 종료 체크리스트 (close 모드, 항목마다 사용자 확인)
 
+auto 계획은 완료 보고 때 1~4번이 남았는지 먼저 본다. 남은 것이 없으면 5번을 auto가 적고 close는 하지 않아도 된다(SKILL.md auto 10단계). 남은 것이 있으면 아래를 사용자와 하나씩 처리한다.
+
 1. `.claude/settings.json` `permissions.additionalDirectories` 에 이 계획 전용으로 넣은 경로 — 제거할지.
 2. `.claude/settings.local.json` `permissions.allow` 에 계획 기간 한정으로 넣은 항목(예 `"Bash"`) — 제거(사용자가 직접 편집; 분류기가 자체 수정 차단할 수 있음).
 3. scratch/stage/applied-layer 임시 자산(`/private/tmp/<plan>-*`, 스크래치 worktree) — 정리할지.
