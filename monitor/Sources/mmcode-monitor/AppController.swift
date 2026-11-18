@@ -13,13 +13,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let store: Store
     private static let size = PanelView.size
     /// 패널 모서리(pt).
-    static let radius: CGFloat = 5
+    static let radius: CGFloat = 10
     private let panel = PanelView(frame: CGRect(x: 2, y: 2, width: size.width, height: size.height))
     private var window: PanelWindow!
     private var item: NSStatusItem!
     private var frameTimer: Timer?
     private var outside: Any?
-    private var attention: Bool?
+    private var iconState: PostCat?
 
     init(_ args: Args) {
         self.args = args
@@ -55,6 +55,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         panel.onClose = { [weak self] in self?.close() }
         panel.onFocus = { [weak self] root in self?.store.setFocus(root) }
         store.onChange = { [weak self] in self?.dataChanged() }
+        panel.onHeightChange = { [weak self] height in
+            guard let self else { return }
+            var rect = window.frame
+            rect.origin.y += rect.height - height - 4
+            rect.size.height = height + 4
+            window.setFrame(rect, display: window.isVisible)
+        }
+        panel.onSceneVisibilityChange = { [weak self] in self?.syncTimer() }
         configure(panel, args, store)
         updateIcon()
         store.start()
@@ -81,19 +89,13 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     // MARK: 메뉴 막대 아이콘
 
-    /// 평소에는 종이색 칸에 고양이 얼굴, 나설 일이 있으면 분홍 칸에 손든 얼굴(색과 모양이 함께 바뀐다).
     private func updateIcon() {
-        let turn = !store.loaded ? false : SceneBuilder.building(store.world, night: false).ground.turn
-        guard turn != attention else { return }
-        attention = turn
-        let face = SceneRenderer.icon(.face(.tabby, turn ? .ask : .wait))
-        let img = NSImage(size: CGSize(width: 22, height: 18), flipped: true) { r in
-            fillRound(r.insetBy(dx: 0.5, dy: 0.5), 4, turn ? Theme.pink : Theme.paper, stroke: Theme.ink, width: 1.5)
-            drawPixels(face, in: CGRect(x: 3, y: 1, width: 16, height: 16))
-            return true
-        }
-        item.button?.image = img
-        item.button?.setAccessibilityValue(turn ? "나설 일이 있습니다" : "조용합니다")
+        let state = PostCat.state(store)
+        guard state != iconState else { return }
+        iconState = state
+        item.button?.image = state.image
+        item.button?.setAccessibilityValue(state.description)
+        item.button?.toolTip = "mmCode · " + state.description
     }
 
     // MARK: 패널 열고 닫기
@@ -116,7 +118,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             window.setFrameTopLeftPoint(CGPoint(x: x, y: r.minY - 4))
         }
         edgeColor()
-        panel.reload()
+        if args.demo == nil && args.view == nil { panel.openOverview() } else { panel.reload() }
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(panel)
         window.invalidateShadow()
@@ -141,7 +143,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// 패널이 보이고 가려지지 않았을 때만 프레임을 바꾼다(0.34초, 약 3Hz). 움직임 줄이기 설정이면 멈춘다.
     private func syncTimer() {
-        let run = window.isVisible && window.occlusionState.contains(.visible) && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let run = !panel.scene.isHidden && window.isVisible && window.occlusionState.contains(.visible) && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if run, frameTimer == nil {
             frameTimer = Timer.scheduledTimer(withTimeInterval: 0.34, repeats: true) { [weak self] _ in self?.panel.tick() }
         } else if !run {

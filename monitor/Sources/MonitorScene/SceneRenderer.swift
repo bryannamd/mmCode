@@ -146,19 +146,61 @@ public enum SceneRenderer {
         c.R(0, 0, W, H, P.sky)
         if st.night { c.R(5, 14, 5, 5, P.sun); c.R(7, 14, 3, 3, P.sky); for p in [(11, 36), (4, 58), (9, 82), (229, 40), (233, 90)] { c.R(p.0, p.1, 1, 1, P.star) } }
         else { c.R(5, 14, 6, 6, P.sun); c.R(2, 44, 10, 2, P.cloud); c.R(4, 42, 5, 2, P.cloud); c.R(228, 60, 9, 2, P.cloud) }
-        c.R(0, 102, W, 6, P.grass); c.R(0, 102, W, 1, P.ink)
-        c.R(14, 4, 208, 4, P.bldg); c.R(18, 8, 200, 94, P.bldg)
-        for x in stride(from: 18, to: 218, by: 7) { c.R(x, 5, 2, 1, P.hatch) }
+        // A street-side sorting house. Only occupied floors have lit bays.
+        if st.floors.isEmpty {
+            // Closed collection box on the path. No invented occupants or active floors.
+            c.R(0, 74, W, 34, P.grass)
+            for step in 0..<7 { c.R(114 - step * 3, 74 + 5 * step, 12 + step * 6, 5, P.floor) }
+            c.R(117, 60, 5, 14, P.wood2)
+            c.B(104, 42, 31, 20, P.sofa, P.ink)
+            c.B(102, 40, 35, 5, P.sofa2, P.ink)
+            c.R(110, 47, 19, 3, P.ink)
+            c.B(115, 53, 9, 5, P.card, P.ink)
+            for x in [40, 67, 152, 187] {
+                c.R(x, 70, 2, 6, P.leaf2)
+                c.R(x - 2, 70, 3, 2, P.leaf)
+                c.R(x, 67, 3, 3, P.sun)
+            }
+            return
+        }
+        let street = BuildingLayout.floorY + st.floors.count * BuildingLayout.floorH
+        c.R(0, street, W, H - street, P.grass)
+        for x in stride(from: 1, to: W, by: 9) {
+            c.R(x, street + 3 + x % 4, 2, 1, P.leaf2)
+        }
+        c.R(15, 6, 205, street - 6, P.bldg)
+        c.R(13, 3, 209, 5, P.ink)
+        for x in stride(from: 15, to: 220, by: 10) {
+            c.R(x, 3, 5, 3, P.sofa)
+            c.R(x + 5, 3, 5, 3, P.paper)
+        }
+        // Brick plinth and the small public post box at street level.
+        c.R(14, street - 2, 207, 3, P.wood2)
+        c.R(6, street - 8, 2, 9, P.ink)
+        c.B(2, street - 13, 9, 8, P.door, P.ink)
+        c.R(4, street - 11, 5, 1, P.ink)
         for (i, f) in st.floors.enumerated() {
             let y = BuildingLayout.floorY + i * BuildingLayout.floorH, n = f.agents.count
             c.R(20, y, 196, 21, P.walls[f.index % P.walls.count])
-            for x in stride(from: 94, to: 212, by: 10) { c.R(x, y + 14, 1, 7, RGBA(35, 40, 69, 0.08)) }
-            c.B(22, y + 2, 62, 11, P.card, P.ink)
+            c.R(20, y + 18, 196, 3, P.floor)
+            c.R(20, y + 20, 196, 1, P.wood2)
+            // Tall sash window, sill and a potted cutting at the far end of each bay.
+            c.B(199, y + 2, 13, 12, P.sky, P.hatch)
+            c.R(205, y + 3, 1, 10, P.hatch)
+            c.R(200, y + 7, 11, 1, P.hatch)
+            c.R(198, y + 14, 15, 1, P.wood2)
+            c.R(209, y + 15, 4, 3, P.pot)
+            c.R(210, y + 11, 2, 4, P.leaf2)
+            c.R(208, y + 12, 2, 2, P.leaf)
+            // A cream label holder attached by two brass rivets.
+            c.R(22, y + 1, 64, 13, P.wood2)
+            c.R(23, y + 2, 62, 11, P.card)
+            c.R(83, y + 7, 1, 1, P.wood2)
             for k in 0..<min(f.total, BuildingLayout.cellsPerFloor) {   // 사무실의 상자와 같은 그림: 호박색은 대기·진행, 초록은 완료
                 let dn = k < f.done
                 c.B(23 + k * 6, y + 15, 5, 5, dn ? P.boxD : P.box, P.ink); c.R(24 + k * 6, y + 18, 3, 1, dn ? P.boxD2 : P.box2)
             }
-            if n == 0 || (st.night && f.agents.allSatisfy { $0.pose == .sleep }) { c.R(20, y, 196, 21, P.dim) }
+            if n == 0 || (st.night && f.agents.allSatisfy { $0.pose == .sleep }) { c.R(87, y, 129, 21, P.dim) }
             for (k, a) in f.agents.prefix(BuildingLayout.agentsPerFloor).enumerated() {
                 c.sprite(P, x: 104 + k * 22, y: y + 20, coat: a.coat, pose: a.pose, fr: fr, bare: true)
             }
@@ -177,7 +219,7 @@ public enum SceneRenderer {
         switch kind {
         case .face(let coat, let pose):
             let p: Pose = pose == .sleep ? .stopped : pose == .work ? .wait : pose
-            c.sprite(P, x: 8, y: 21, coat: coat, pose: p, fr: 0, bare: true)
+            c.sprite(P, x: 8, y: 17, coat: coat, pose: p, fr: 0, bare: true)
         case .bell:
             c.B(3, 4, 10, 8, P.amber, P.ink); c.R(7, 2, 2, 2, P.ink); c.R(2, 11, 12, 1, P.ink); c.R(7, 12, 2, 2, P.ink)
         case .stop:

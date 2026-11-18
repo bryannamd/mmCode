@@ -23,7 +23,7 @@ public enum SceneBuilder {
 
     // MARK: 급한 일
 
-    /// 지반 우선순위: 결정 대기 > 단위 막힘 > 환경·한도 > 입력 대기 > 사용자 정지.
+    /// 지반 우선순위: 결정·입력 대기 > 단위 막힘 > 환경·한도 > 사용자 정지.
     enum Urgent {
         case decision(Decision)
         case unitBlocked(UnitState, Halt)
@@ -60,6 +60,8 @@ public enum SceneBuilder {
         let open = p.hasEvents ? p.openDecisions : [], halts = p.hasEvents ? p.decisionHalts : []
         let linked = Set(halts.compactMap(\.halt.decision))
         if let d = open.first(where: { linked.contains($0.id) }) ?? open.first { return .decision(d) }
+        let waiting = p.agents.filter { $0.status == .blocked }
+        if let terminal = waiting.first(where: { $0.question != nil }) ?? waiting.first { return .input(terminal) }
         // 결정 요청 기록 없이 멈춤만 있으면(손으로 쓴 halt) 질문을 모른다.
         if let (pl, h) = halts.first {
             let owner = p.plans.first { $0.plan == pl }?.units.first { $0.id == h.unit }?.owner
@@ -76,7 +78,6 @@ public enum SceneBuilder {
             return .environment(text: "\(l)\(josa(l, "으로", "로")) \(who)", agent: errAgent, halt: h)
         }
         if let t = errAgent { return .environment(text: "\(name(t))\(josa(name(t), "이", "가")) 오류로 멈췄습니다", agent: t, halt: nil) }
-        if let t = p.agents.first(where: { $0.status == .blocked }) { return .input(t) }
         if let h = plan?.allHalts.first(where: { $0.kind == .userStop }) ?? plan.flatMap(appliedStop) { return .userStop(h) }
         return nil
     }
@@ -102,7 +103,7 @@ public enum SceneBuilder {
     /// 말풍선은 한 줄 요약이다. 긴 상태 문구는 장면을 가리므로 자른다.
     static func brief(_ s: String, max: Int = 18) -> String { s.count > max ? s.prefix(max) + "…" : s }
 
-    static func actors(_ p: Project) -> [SceneActor] {
+    public static func actors(_ p: Project) -> [SceneActor] {
         let plan = p.hasEvents ? p.activePlan : nil
         var askers = Set((p.hasEvents ? p.openDecisions : []).compactMap { $0.asker?.terminal })
         if case .decision(let d)? = urgent(p), let t = d.asker?.terminal { askers.insert(t) }
@@ -226,7 +227,9 @@ public enum SceneBuilder {
     }
 
     static func rank(_ u: Urgent) -> Int {
-        switch u { case .decision: 0; case .unitBlocked: 1; case .environment: 2; case .input: 3; case .userStop: 4 }
+        switch u { case .decision(let d): d.id.hasPrefix("halt:") ? 3 : 0
+        case .input(let t): t.question == nil ? 2 : 1
+        case .unitBlocked: 4; case .environment: 5; case .userStop: 6 }
     }
 
     static func face(_ all: [SceneActor], _ id: String?) -> GroundIcon? {
@@ -246,6 +249,10 @@ public enum SceneBuilder {
 
     static func stopDetail(_ h: Halt) -> String {
         h.reason == "interrupt" ? "즉시 중단을 적용했습니다" : "단위 후 정지를 적용했습니다"
+    }
+
+    public static func projectGround(_ world: World, at index: Int) -> GroundModel {
+        officeGround(world, index, actors(world.projects[index]))
     }
 
     static func officeGround(_ world: World, _ pi: Int, _ all: [SceneActor]) -> GroundModel {
@@ -268,9 +275,8 @@ public enum SceneBuilder {
             let n = name(t)
             if let q = t.question {
                 let b = choiceButtons(terminal: t.address, q)
-                let more = b.count < q.options.count ? ". 나머지 선택지는 터미널에서 고르세요" : ""
                 return GroundModel(turn: true, floor: pi, icon: face(all, t.address) ?? .bell, title: q.text,
-                                   detail: "\(n)\(josa(n, "이", "가")) 답을 기다립니다" + more, buttons: b)
+                                   detail: "\(n)\(josa(n, "이", "가")) 답을 기다립니다", buttons: b)
             }
             return GroundModel(turn: true, floor: pi, icon: face(all, t.address) ?? .bell, title: "\(n)\(josa(n, "이", "가")) 터미널에서 입력을 기다립니다",
                                detail: t.statusText ?? t.location, buttons: [])
@@ -314,7 +320,7 @@ public enum SceneBuilder {
     }
 
     /// 결정 답 버튼. 선택지가 있으면 선택지를, 없으면 추천안을 버튼으로 둔다. 추천안 버튼이 주된 버튼이다.
-    /// 지반에 다 들어가지 않는 선택지는 "다르게 답하기"로 넣는다.
+    /// 선택지가 길면 기존 자유 입력과 모든 원래 답을 함께 제공한다.
     static func answerButtons(_ d: Decision) -> [GroundButton] {
         let reply = GroundButton("다르게 답하기", .reply(decision: d.id))
         func pick(_ s: String) -> GroundButton { GroundButton(s, .answer(decision: d.id, text: s), primary: s == d.recommendation) }
@@ -322,16 +328,12 @@ public enum SceneBuilder {
             return d.recommendation.map { [pick($0), reply] } ?? [GroundButton("답하기", .reply(decision: d.id), primary: true)]
         }
         if fits(d.options) { return d.options.map(pick) }
-        var kept = d.options
-        while !kept.isEmpty, !fits(kept + [reply.label]) { kept.removeLast() }
-        return kept.isEmpty ? [GroundButton(reply.label, reply.action, primary: true)] : kept.map(pick) + [reply]
+        return d.options.map(pick) + [reply]
     }
 
-    /// 객관식 질문의 선택지 버튼. 지반에 다 들어가지 않는 선택지는 뒤에서부터 뺀다(answerButtons와 같은 한도).
+    /// 질문 화면의 번호를 보존한다. 패널은 남은 선택지를 기본 메뉴에 담는다.
     public static func choiceButtons(terminal: String, _ q: ScreenQuestion) -> [GroundButton] {
-        var kept = q.options
-        while !kept.isEmpty, !fits(kept.map(\.label)) { kept.removeLast() }
-        return kept.map { GroundButton($0.label, .choose(terminal: terminal, number: $0.number)) }
+        q.options.map { GroundButton($0.label, .choose(terminal: terminal, number: $0.number)) }
     }
 
     /// 지반 버튼 줄의 폭 한도(pt). 지반 240에서 글 시작(40), 오른쪽 여백 6, 닫기 버튼 자리(24 + 간격 6)를 뺀 값이다.
@@ -434,11 +436,11 @@ public enum SceneBuilder {
     }
 
     /// 모든 층 중에서 가장 급한 일 하나. 같으면 위층이 먼저다.
-    static func buildingGround(_ world: World) -> GroundModel {
+    public static func buildingGround(_ world: World) -> GroundModel {
         let all = world.projects.indices.compactMap { i in urgent(world.projects[i]).map { (i, $0) } }
         guard let (i, u) = all.min(by: { rank($0.1) < rank($1.1) }) else {
-            return GroundModel(turn: false, floor: nil, icon: .building, title: "조용합니다. 나설 일이 없습니다",
-                               detail: world.projects.isEmpty ? "hc에 터미널이 없습니다" : "층 \(world.projects.count)개가 일하거나 쉬는 중입니다", buttons: [])
+            return GroundModel(turn: false, floor: nil, icon: .building, title: world.projects.isEmpty ? "아직 열린 층이 없어요" : "조용합니다. 나설 일이 없습니다",
+                               detail: world.projects.isEmpty ? "에이전트가 있는 프로젝트가 여기에 표시됩니다" : "층 \(world.projects.count)개가 일하거나 쉬는 중입니다", buttons: [])
         }
         let p = world.projects[i], people = actors(p), go = [GroundButton("층으로 가기", .enterFloor(i), primary: true)]
         let title = "\(p.name) 층: \(u.label)"
@@ -450,13 +452,19 @@ public enum SceneBuilder {
         case .environment(let text, let t, _):
             return GroundModel(turn: true, floor: i, icon: face(people, t?.address) ?? .bell, title: "\(p.name) 층: \(HaltClass.environment.label)", detail: text, buttons: go)
         case .input(let t):
-            let n = name(t)
-            return GroundModel(turn: true, floor: i, icon: face(people, t.address) ?? .bell, title: title, detail: "\(n)\(josa(n, "이", "가")) 터미널에서 입력을 기다립니다", buttons: go)
+            return GroundModel(turn: true, floor: i, icon: face(people, t.address) ?? .bell, title: title, detail: inputDetail(t), buttons: go)
         case .userStop(let h):
             let can = resumable(p.hasEvents ? p.activePlan : nil, h)
             return GroundModel(turn: false, floor: i, icon: .stop, title: title, detail: stopDetail(h) + (can ? "" : ". " + resumeHint(p, h)),
                                buttons: can ? [GroundButton("계속", .resume, primary: true)] : [])
         }
+    }
+
+    static func inputDetail(_ terminal: Terminal) -> String {
+        if let question = terminal.question { return question.text }
+        let n = name(terminal)
+        if let status = terminal.statusText, !status.isEmpty { return n + " · " + status }
+        return "\(n)\(josa(n, "이", "가")) 터미널에서 입력을 기다립니다"
     }
 
     static func buildingList(_ world: World) -> ListModel {

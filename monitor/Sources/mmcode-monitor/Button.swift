@@ -18,7 +18,7 @@ class PanelButton: NSView {
     /// 보이는 영역. 클릭 영역(frame)보다 작을 수 있다.
     var visual: CGRect = .zero
     var onPress: () -> Void = {}
-    private var hover = false
+    private(set) var hover = false
 
     init(_ style: Style, _ title: String, label: String? = nil, onPress: @escaping () -> Void = {}) {
         self.style = style; self.title = title; self.onPress = onPress
@@ -68,7 +68,7 @@ class PanelButton: NSView {
     var fitSize: CGSize {
         switch style {
         case .nav: return CGSize(width: Line(title, Theme.jua(11), .black).width + 12, height: 18)
-        case .primary, .outline: return CGSize(width: max(32, Line(title, Theme.jua(12), .black).width + 20), height: 24)
+        case .primary, .outline: return CGSize(width: max(32, Line(title, Theme.body(13, .semibold), .black).width + 20), height: 24)
         case .close: return CGSize(width: 24, height: 24)
         case .hit: return visual.size
         }
@@ -76,25 +76,28 @@ class PanelButton: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let r = visual == .zero ? bounds : visual
-        let fg = turn ? Theme.ink : Theme.paper, bg = turn ? Theme.pink : Theme.ink
+        let accent = turn ? Theme.postalRed : Theme.ink
         let alpha: CGFloat = disabled ? 0.5 : 1
         switch style {
         case .nav:
-            fillRound(r, 5, on ? Theme.paper : alarm ? Theme.pink : hover ? Theme.ink3 : Theme.ink2)
-            Line(title, Theme.jua(11), on || alarm ? Theme.ink : Theme.paper).draw(x: r.minX + 6, cy: r.midY)
-        case .primary:
-            fillRound(r, 7, fg.withAlphaComponent(alpha), stroke: fg.withAlphaComponent(alpha))
-            Line(title, Theme.jua(12), bg.withAlphaComponent(alpha)).draw(x: r.minX + 10, cy: r.midY, maxWidth: r.width - 20)
-        case .outline:
-            let h = turn ? Theme.ink.withAlphaComponent(0.14) : Theme.paper.withAlphaComponent(0.16)
-            fillRound(r, 7, hover && !disabled ? h : nil, stroke: fg.withAlphaComponent(alpha))
-            Line(title, Theme.jua(12), fg.withAlphaComponent(alpha)).draw(x: r.minX + 10, cy: r.midY, maxWidth: r.width - 20)
+            let fill = alarm ? Theme.pink : on ? Theme.sage : hover ? NSColor(hex: 0xe2e9df) : NSColor(hex: 0xeff1ea)
+            fillRound(r.insetBy(dx: 0, dy: 1), 7, fill)
+            let label = Line(title, Theme.body(12, .semibold), alarm ? Theme.postalRed : Theme.ink)
+            label.draw(x: r.midX - label.width / 2, cy: r.midY)
+        case .primary, .outline:
+            let primary = style == .primary
+            let fill = primary ? (hover && !disabled ? accent.blended(withFraction: 0.15, of: .black) ?? accent : accent)
+                               : (hover && !disabled ? accent.withAlphaComponent(0.12) : nil)
+            fillRound(r, 7, disabled ? fill?.withAlphaComponent(alpha) : fill, stroke: primary ? nil : accent.withAlphaComponent(0.5 * alpha), width: 1)
+            let label = Line(title, Theme.body(13, .semibold), (primary ? Theme.paper : accent).withAlphaComponent(alpha))
+            let w = min(label.width, max(1, r.width - 12))
+            label.draw(x: r.midX - w / 2, cy: r.midY, maxWidth: w + 1)
         case .close:
-            if hover { fillRound(r, 7, turn ? Theme.ink.withAlphaComponent(0.14) : Theme.paper.withAlphaComponent(0.16)) }
-            let p = NSBezierPath(), o = CGPoint(x: r.midX - 4, y: r.midY - 4)
-            p.move(to: CGPoint(x: o.x, y: o.y)); p.line(to: CGPoint(x: o.x + 8, y: o.y + 8))
-            p.move(to: CGPoint(x: o.x + 8, y: o.y)); p.line(to: CGPoint(x: o.x, y: o.y + 8))
-            p.lineWidth = 2; p.lineCapStyle = .round; fg.setStroke(); p.stroke()
+            fillRound(r, 7, hover ? accent.withAlphaComponent(0.1) : nil, stroke: accent.withAlphaComponent(0.45), width: 1)
+            let p = NSBezierPath(), o = CGPoint(x: r.midX - 3, y: r.midY - 3)
+            p.move(to: o); p.line(to: CGPoint(x: o.x + 6, y: o.y + 6))
+            p.move(to: CGPoint(x: o.x + 6, y: o.y)); p.line(to: CGPoint(x: o.x, y: o.y + 6))
+            p.lineWidth = 1.5; p.lineCapStyle = .round; accent.setStroke(); p.stroke()
         case .hit:
             if hover { fillRound(r, 6, Theme.paper.withAlphaComponent(0.28)) }
             if on {

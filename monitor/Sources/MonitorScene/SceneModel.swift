@@ -130,7 +130,11 @@ public struct OfficeScene: Equatable, Sendable {
     public var hits: [HitTarget]
 }
 
-public struct FloorAgent: Equatable, Sendable { public var coat: Coat; public var pose: Pose }
+public struct FloorAgent: Equatable, Sendable {
+    public var coat: Coat
+    public var pose: Pose
+    public init(coat: Coat, pose: Pose) { self.coat = coat; self.pose = pose }
+}
 
 public struct BuildingFloor: Equatable, Sendable {
     /// `World.projects`의 위치.

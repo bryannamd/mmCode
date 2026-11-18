@@ -10,10 +10,12 @@ extension NSColor {
 }
 
 enum Theme {
-    static let ink = NSColor(hex: 0x232845), ink2 = NSColor(hex: 0x39406b), ink3 = NSColor(hex: 0x4a548c)
-    static let paper = NSColor(hex: 0xfffdf4), pink = NSColor(hex: 0xff4f9a)
-    static let onInkSub = NSColor(hex: 0xc9d3ee), paperSub = NSColor(hex: 0x4d5677), paperLine = NSColor(hex: 0xd9d6c4)
+    static let ink = NSColor(hex: 0x233e38), ink2 = NSColor(hex: 0x36534b), ink3 = NSColor(hex: 0x4f7167)
+    static let paper = NSColor(hex: 0xfffbef), pink = NSColor(hex: 0xffccd0)
+    static let onInkSub = NSColor(hex: 0xdae8dd), paperSub = NSColor(hex: 0x515e53), paperLine = NSColor(hex: 0xe0d9c7)
+    static let postalRed = NSColor(hex: 0x8a3044), sage = NSColor(hex: 0xc8dfc6)
     static let box = NSColor(hex: 0xeab85f), box2 = NSColor(hex: 0xb9822f), boxDone = NSColor(hex: 0x93dba8), boxDone2 = NSColor(hex: 0x3f9a5f)
+    static let surface = NSColor(hex: 0xfffdf8)
     static let cardNight = NSColor(hex: 0xaab3d6)
 
     static func jua(_ size: CGFloat) -> NSFont { NSFont(name: Fonts.jua, size: size) ?? .systemFont(ofSize: size) }

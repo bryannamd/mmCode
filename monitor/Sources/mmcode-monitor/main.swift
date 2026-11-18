@@ -4,7 +4,7 @@ import MonitorScene
 
 // 메뉴 막대 앱. 사용법:
 //   mmcode-monitor [--demo <이름>] [--open] [--exit-after <초>]
-//   mmcode-monitor --snapshot <png> [--demo <이름>] [--view office|building|list] [--day|--night] [--select actor[:번호]|box] [--press <지반 버튼 이름>]
+//   mmcode-monitor --snapshot <png> [--demo <이름>] [--view office|building|list|icon] [--day|--night] [--select actor[:번호]|box] [--press <지반 버튼 이름>]
 
 struct Args {
     var demo: Demo?, snapshot: String?, view: String?, night: Bool?, select: String?, press: String?, exitAfter: Double?, open = false
@@ -47,7 +47,7 @@ func memoryLine() -> String {
 func configure(_ p: PanelView, _ args: Args, _ store: Store) {
     p.world = store.world; p.demo = store.demo != nil; p.hcMissing = store.hcMissing; p.hcDown = store.hcDown; p.loaded = store.loaded
     p.fixedNight = args.night
-    let wantOffice = args.view == "office" || (args.view == "list" && (store.demo?.isOffice ?? true)) || (args.view == nil && store.demo?.isOffice == true)
+    let wantOffice = (args.view == "office" || args.view == "office-map") || (args.view == "list" && (store.demo?.isOffice ?? true)) || (args.view == nil && store.demo?.isOffice == true)
     if wantOffice, !p.world.projects.isEmpty {
         // 실제 자료면 지금 폴더의 저장소, 없으면 첫 층.
         let here = ProjectGrouping.gitRoot(from: FileManager.default.currentDirectoryPath)
@@ -55,7 +55,8 @@ func configure(_ p: PanelView, _ args: Args, _ store: Store) {
         p.go(.office)
     }
     if args.view == "list" { p.go(.list) }
-    if args.view == "building" { p.go(.building) }
+    if args.view == "building" || args.view == "building-map" { p.go(.building) }
+    if args.view == "building-map" || args.view == "office-map" { p.roof.map.onPress() }
     p.reload()
 }
 
@@ -64,34 +65,48 @@ func snapshot(_ args: Args, to path: String) {
     Fonts.register()
     let store = Store(demo: args.demo, saveFloors: false)
     let here = ProjectGrouping.gitRoot(from: FileManager.default.currentDirectoryPath)
-    store.loadOnce(focus: args.view == "office" || args.view == "list" ? here : nil)
+    store.loadOnce(focus: ["office", "office-map", "list"].contains(args.view ?? "") ? here : nil)
+    if args.view == "icon" {
+        let image = PostCat.state(store).image
+        let icon = NSImageView(frame: CGRect(origin: .zero, size: image.size))
+        icon.image = image
+        icon.contentTintColor = args.night == true ? .white : .black
+        saveSnapshot(icon, radius: 0, to: path)
+        return
+    }
     // 실제 창과 같은 크기를 레티나 2배 픽셀로 찍는다.
-    let W = Int(PanelView.size.width * 2), H = Int(PanelView.size.height * 2)
     let p = PanelView(frame: CGRect(origin: .zero, size: PanelView.size))
     p.noSend = true  // 화면 찍기는 무엇도 보내지 않는다
     p.appearance = NSAppearance(named: .aqua)
     configure(p, args, store)
     if let s = args.select, case .office = p.mode {
-        let hits = p.scene.overlay.subviews.compactMap { $0 as? HitButton }
-        // 상자는 진행 중인 것(대기·완료 선반이 아닌 것)을 먼저 고른다.
-        let boxes = hits.filter { if case .box = $0.kind { return true } else { return false } }
-        let busy = boxes.first { b in !["대기 단계", "완료 단계"].contains { (b.accessibilityLabel() ?? "").contains($0) } }
-        // `actor:2`는 둘째 캐릭터를 고른다.
-        let actors = hits.filter { if case .actor = $0.kind { return true } else { return false } }
-        let nth = Int(s.split(separator: ":").dropFirst().first ?? "") ?? 1
-        let pick = s == "box" ? busy ?? boxes.first : actors.indices.contains(nth - 1) ? actors[nth - 1] : nil
-        pick?.onPress()
+        if let i = p.officeIndex {
+            let project = p.world.projects[i]
+            let o = SceneBuilder.office(p.world, project: i, night: p.night)
+            if s == "box", let box = o.scene.boxes.first(where: { [.build, .verify, .review].contains($0.phase) }) ?? o.scene.boxes.first {
+                p.selectTarget(.box(box.id))
+            } else {
+                let actors = SceneBuilder.actors(project)
+                let nth = Int(s.split(separator: ":").dropFirst().first ?? "") ?? 1
+                if nth > 0, actors.indices.contains(nth - 1) { p.selectTarget(.actor(actors[nth - 1].id)) }
+            }
+        }
     }
     // 입력칸이나 중단 확인 같은 지반 상태를 찍는다. 예시 자료면 보내지 않는다.
     if let b = args.press { p.ground.press(b) }
+    saveSnapshot(p, radius: AppController.radius, to: path)
+}
+
+func saveSnapshot(_ p: NSView, radius: CGFloat, to path: String) {
     p.layoutSubtreeIfNeeded()
+    let W = Int(p.bounds.width * 2), H = Int(p.bounds.height * 2)
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: W, pixelsHigh: H, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     rep.size = p.bounds.size
     p.cacheDisplay(in: p.bounds, to: rep)
     // 패널의 둥근 모서리를 남기고 바깥을 비운다.
     let ctx = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: W, height: H), cornerWidth: AppController.radius * 2, cornerHeight: AppController.radius * 2, transform: nil)); ctx.clip()
+    ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: W, height: H), cornerWidth: radius * 2, cornerHeight: radius * 2, transform: nil)); ctx.clip()
     ctx.draw(rep.cgImage!, in: CGRect(x: 0, y: 0, width: W, height: H))
     let out = NSBitmapImageRep(cgImage: ctx.makeImage()!)
     do { try out.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path)); print(path) }

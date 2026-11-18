@@ -137,7 +137,7 @@
 |---|---|
 | `MonitorCore` | 자료 모델(`Model.swift`), 기록 읽기(`EventLog`), `hc` 읽기(`HcClient`), 프로젝트 묶기(`ProjectGrouping`), 층 순서(`FloorOrder`), 파일 변경 알림(`FileWatcher`) |
 | `MonitorScene` | 상태를 장면으로 바꾸기(`SceneBuilder`), 픽셀 그리기(`SceneRenderer`, 시안의 값 그대로), 예시 자료(`Demo`) |
-| `mmcode-monitor` | 메뉴 막대 앱. 패널 240×180pt, 지붕, 장면, 지반, 목록 |
+| `mmcode-monitor` | 메뉴 막대 앱. 폭 380pt 작업 모니터, 요청 응답, 프로젝트와 담당자 목록, 픽셀 공간 |
 | `scene-snap` | 장면을 PNG로 저장하는 확인 도구 |
 
 실행:
@@ -145,11 +145,12 @@
 - 빌드와 시험: `cd monitor && swift build && swift test`
 - 실행: `swift run -c release mmcode-monitor`. 메뉴 막대의 얼굴 아이콘을 클릭한다. 오른쪽 클릭 메뉴에 종료가 있다.
 - 예시 자료: `--demo quiet|decision|blocked|stopped|building|otherFloorAlert|question`
-- 패널을 PNG로 저장: `--snapshot <경로> [--view office|building|list] [--day|--night] [--select actor[:번호]|box] [--press <지반 버튼 이름>]`
+- 패널을 PNG로 저장: `--snapshot <경로> [--view office|building|office-map|building-map|list|icon] [--day|--night] [--select actor[:번호]|box] [--press <지반 버튼 이름>]`
 - 측정: `--exit-after <초> [--open]`. 끝날 때 메모리 값을 한 줄로 적는다.
 
 된 것:
 
+- 2026-11-18 메뉴 막대와 펼침 화면 개편. 고양이 아이콘이 개입·정지·연결 상태를 구분한다. 엽서의 본문과 답 버튼에 독립된 자리가 있고, 남은 선택지는 더 보기 메뉴로 연다.
 - `hc events`의 변화나 기록 파일의 변경이 올 때만 `hc ls`를 다시 읽는다. 폴링하지 않는다.
 - 기록 폴더(`.mmcode`)가 있는 모든 층의 `.mmcode/events.jsonl`을 지켜본다. 단계가 장소로, 멈춤이 표시로 보인다. 다른 층의 멈춤도 기록이 바뀌면 바로 반영된다.
 - 건물, 사무실, 목록 보기. 캐릭터와 상자를 클릭하면 지반에 요약이 나온다.

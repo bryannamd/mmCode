@@ -113,9 +113,9 @@ private func rgb(_ hex: String) -> [UInt8] { let c = RGBA(hex); return [c.r, c.g
     }
     func title(_ w: World) -> String { SceneBuilder.office(w, project: 0, night: false).ground.title }
     #expect(title(world(decision: true, blocked: true, env: true, input: true, stop: true)) == "Q?")
-    #expect(title(world(decision: false, blocked: true, env: true, input: true, stop: true)) == "U1 단위 막힘")
-    #expect(title(world(decision: false, blocked: false, env: true, input: true, stop: true)) == "한도 초과로 멈췄습니다")
-    let input = SceneBuilder.office(world(decision: false, blocked: false, env: false, input: true, stop: true), project: 0, night: false).ground
+    #expect(title(world(decision: false, blocked: true, env: true, input: false, stop: true)) == "U1 단위 막힘")
+    #expect(title(world(decision: false, blocked: false, env: true, input: false, stop: true)) == "한도 초과로 멈췄습니다")
+    let input = SceneBuilder.office(world(decision: false, blocked: true, env: true, input: true, stop: true), project: 0, night: false).ground
     #expect(input.title == "일꾼이 터미널에서 입력을 기다립니다" && input.buttons.isEmpty && input.turn)
     #expect(title(world(decision: false, blocked: false, env: false, input: false, stop: true)) == "사용자 정지 상태입니다")
     #expect(title(world(decision: false, blocked: false, env: false, input: false, stop: false)).hasPrefix("조용합니다"))
@@ -169,9 +169,9 @@ private func rgb(_ hex: String) -> [UInt8] { let c = RGBA(hex); return [c.r, c.g
     // 에이전트가 없는 층(p2)은 어둡다.
     let img = SceneRenderer.render(b, frame: 0).base
     let y2 = BuildingLayout.floorY + 1 * BuildingLayout.floorH + 3, y1 = BuildingLayout.floorY + 3
-    #expect(pixel(img, 200, y2) != rgb("#d9d2ff") && pixel(img, 200, y1) == rgb("#ffd9c2"))
+    #expect(pixel(img, 192, y2) != rgb("#d9dfcf") && pixel(img, 192, y1) == rgb("#f4d8ba"))
     // 위 화살표는 시안에 없는 추가라 해치 색으로 작게 그린다.
-    #expect(pixel(img, 118, 1) == rgb("#4a548c"))
+    #expect(pixel(img, 118, 1) == rgb("#57786b"))
 }
 
 // MARK: 그리기
@@ -180,15 +180,15 @@ private func rgb(_ hex: String) -> [UInt8] { let c = RGBA(hex); return [c.r, c.g
     let s = SceneBuilder.office(Demo.decision.world, project: 0, night: false).scene
     let f0 = SceneRenderer.render(s, frame: 0), f1 = SceneRenderer.render(s, frame: 1)
     #expect(f0.base.width == 240 && f0.base.height == 108 && f0.fx.width == 240)
-    #expect(pixel(f0.base, 0, 0) == rgb("#232845"))   // 천장 판
-    #expect(pixel(f0.base, 6, 5) == rgb("#c8eee0"))   // 벽
-    #expect(pixel(f0.base, 100, 75) == rgb("#f4bd6c")) // 바닥
-    #expect(pixel(f0.fx, 134, 90) == rgb("#ff4f9a"))   // 분홍 벨은 주의 층에만
+    #expect(pixel(f0.base, 0, 0) == rgb("#273f39"))   // 천장 판
+    #expect(pixel(f0.base, 6, 5) == rgb("#ecebd2"))   // 벽
+    #expect(pixel(f0.base, 100, 75) == rgb("#ebcba2")) // 바닥
+    #expect(pixel(f0.fx, 134, 90) == rgb("#ff91aa"))   // 분홍 벨은 주의 층에만
     #expect(pixel(f0.base, 134, 90) == rgb("#ffc23d"))
     #expect(pixel(f0.fx, 5, 5)[3] == 0)
     #expect(f0.fx.dataProvider!.data! as Data != f1.fx.dataProvider!.data! as Data, "손 흔들기와 벨 울림")
     let night = SceneRenderer.render(SceneBuilder.office(Demo.decision.world, project: 0, night: true).scene, frame: 0)
-    #expect(pixel(night.base, 6, 5) == rgb("#2f3b76"))
+    #expect(pixel(night.base, 6, 5) == rgb("#485461"))
 }
 
 @Test func workingFramesDiffer() {
@@ -251,14 +251,15 @@ private func decisionGround(_ d: Decision, halt: Halt? = nil, others: [Decision]
     Fonts.register()
     let fit = decisionGround(Decision(id: "D1", question: "Q", recommendation: "아니오", options: ["예", "아니오"], ts: t0)).buttons
     #expect(fit == [GroundButton("예", .answer(decision: "D1", text: "예")), GroundButton("아니오", .answer(decision: "D1", text: "아니오"), primary: true)])
-    // 다 들어가지 않으면 앞의 것만 두고 나머지는 "다르게 답하기"로 넣는다.
-    // 지반 폭 240pt의 버튼 줄(170pt)에는 이 셋이 다 들어가지 않는다.
+    // 폭을 넘으면 패널이 더 보기로 넘긴다. 원래 답과 자유 입력을 모두 보존한다.
     let long = ["첫째 안", "둘째 안", "셋째 안"]
     let some = decisionGround(Decision(id: "D1", question: "Q", recommendation: long[0], options: long, ts: t0)).buttons
-    #expect(some.map(\.label) == [long[0], "다르게 답하기"] && some[0].primary && some[1].action == .reply(decision: "D1"))
-    #expect(SceneBuilder.fits(some.map(\.label)) && !SceneBuilder.fits(long))
-    let none = decisionGround(Decision(id: "D1", question: "Q", options: [String(repeating: "아주 긴 선택지 ", count: 6)], ts: t0)).buttons
-    #expect(none == [GroundButton("다르게 답하기", .reply(decision: "D1"), primary: true)])
+    #expect(some.map(\.label) == long + ["다르게 답하기"])
+    #expect(some[0].primary && some.last?.action == .reply(decision: "D1"))
+    let text = String(repeating: "아주 긴 선택지 ", count: 6)
+    let wide = decisionGround(Decision(id: "D1", question: "Q", options: [text], ts: t0)).buttons
+    #expect(wide.first?.action == .answer(decision: "D1", text: text))
+    #expect(wide.last?.action == .reply(decision: "D1"))
 }
 
 @Test func haltShowsItsOwnDecision() {
@@ -321,7 +322,33 @@ private func decisionGround(_ d: Decision, halt: Halt? = nil, others: [Decision]
 @Test func questionDemoShowsChoices() {
     let v = SceneBuilder.office(Demo.question.world, project: 0, night: false)
     #expect(v.ground.title == "시험 3개가 실패했습니다. 어떻게 할까요?")
-    // 버튼 줄에 둘만 들어간다. 셋째는 터미널에서 고르라고 적는다.
-    #expect(v.ground.buttons == [GroundButton("다시 실행", .choose(terminal: "t2", number: 1)), GroundButton("건너뛰기", .choose(terminal: "t2", number: 2))])
-    #expect(v.ground.detail.hasSuffix("나머지 선택지는 터미널에서 고르세요"))
+    // 세 선택지 모두 원래 터미널 번호를 보존한다.
+    #expect(v.ground.buttons == [GroundButton("다시 실행", .choose(terminal: "t2", number: 1)), GroundButton("건너뛰기", .choose(terminal: "t2", number: 2)), GroundButton("멈추기", .choose(terminal: "t2", number: 3))])
+}
+
+@Test func overviewShowsReasonAndActionsForSameProject() {
+    let world = Demo.building.world
+    let ground = SceneBuilder.buildingGround(world)
+    let index = ground.floor!
+    let row = SceneBuilder.projectSummary(world.projects[index])
+    let local = SceneBuilder.projectGround(world, at: index)
+    #expect(row.root == world.projects[index].root && row.activity == .attention)
+    #expect(row.detail == local.title)
+    #expect(local.buttons.first?.action == .answer(decision: "D1", text: "옮긴다"))
+}
+
+@Test func unknownAndEmptyProjectsDoNotClaimToBeWorking() {
+    let empty = SceneBuilder.projectSummary(proj([], nil))
+    let unknown = SceneBuilder.projectSummary(proj([term("t","worker", .codex, .unknown)], nil))
+    #expect(empty.working == 0 && empty.state == "담당자 없음")
+    #expect(unknown.working == 0 && unknown.activity == .unknown)
+}
+
+@Test func answerableQuestionPrecedesBlockedProject() {
+    let blocked = Demo.blocked.world.projects[0]
+    let question = Demo.question.world.projects[0]
+    let world = World(projects: [blocked, question])
+    #expect(SceneBuilder.buildingGround(world).floor == 1)
+    #expect(SceneBuilder.projectSummary(question).priority < SceneBuilder.projectSummary(blocked).priority)
+    #expect(SceneBuilder.buildingGround(world).detail == "시험 3개가 실패했습니다. 어떻게 할까요?")
 }

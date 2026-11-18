@@ -25,22 +25,22 @@ public struct Palette: Sendable {
     public let walls: [RGBA]
 
     public static let day = Palette(
-        ink: RGBA("#232845"), slab: RGBA("#232845"), hatch: RGBA("#4a548c"), wall: RGBA("#c8eee0"), dot: RGBA("#b2e3d2"), wall2: RGBA("#8fd6c2"), base: RGBA("#5aa896"),
-        floor: RGBA("#f4bd6c"), plank: RGBA("#dd9c47"), wood: RGBA("#cf7c3c"), wood2: RGBA("#a35a26"), back: RGBA("#f1d3a2"), metal: RGBA("#a9bbd8"), metal2: RGBA("#6f83a8"), tower: RGBA("#39406b"),
-        screen: RGBA("#232845"), on: RGBA("#eafcff"), code: RGBA("#2f8fe8"), off: RGBA("#55608a"), box: RGBA("#eab85f"), box2: RGBA("#b9822f"), boxD: RGBA("#93dba8"), boxD2: RGBA("#3f9a5f"),
-        door: RGBA("#e9a55c"), door2: RGBA("#cf7c3c"), sofa: RGBA("#5aa896"), sofa2: RGBA("#3f8576"), paper: RGBA("#fffdf4"), pink: RGBA("#ff4f9a"), red: RGBA("#ef4b4b"), amber: RGBA("#ffc23d"),
-        green: RGBA("#3fc46f"), leaf: RGBA("#3fae6a"), leaf2: RGBA("#2b8a52"), pot: RGBA("#d9683a"), sky: RGBA("#8fd0ff"), cloud: RGBA("#ffffff"), sun: RGBA("#ffd84d"), star: RGBA("#8fd0ff"), lampOn: RGBA("#ffe27a"),
-        lampOff: RGBA("#e7a04a"), cone: RGBA(255, 226, 122, 0), shadow: RGBA(35, 40, 69, 0.2), grass: RGBA("#5fbf6b"), dim: RGBA(35, 40, 69, 0.38), white: RGBA("#ffffff"), bldg: RGBA("#232845"), card: RGBA("#fffdf4"),
-        walls: [RGBA("#c8eee0"), RGBA("#ffd9c2"), RGBA("#d9d2ff"), RGBA("#fff0b8")])
+        ink: RGBA("#273f39"), slab: RGBA("#273f39"), hatch: RGBA("#57786b"), wall: RGBA("#ecebd2"), dot: RGBA("#d4d9be"), wall2: RGBA("#b1cbb8"), base: RGBA("#79aa90"),
+        floor: RGBA("#ebcba2"), plank: RGBA("#d9b68d"), wood: RGBA("#c58c5e"), wood2: RGBA("#986a47"), back: RGBA("#f1d3a2"), metal: RGBA("#a9bbd8"), metal2: RGBA("#6f83a8"), tower: RGBA("#3e5c55"),
+        screen: RGBA("#273f39"), on: RGBA("#eafcff"), code: RGBA("#2f8fe8"), off: RGBA("#55608a"), box: RGBA("#eab85f"), box2: RGBA("#b9822f"), boxD: RGBA("#93dba8"), boxD2: RGBA("#3f9a5f"),
+        door: RGBA("#e9a55c"), door2: RGBA("#c58c5e"), sofa: RGBA("#79aa90"), sofa2: RGBA("#3f8576"), paper: RGBA("#fffdf4"), pink: RGBA("#ff91aa"), red: RGBA("#ef4b4b"), amber: RGBA("#ffc23d"),
+        green: RGBA("#3fc46f"), leaf: RGBA("#3fae6a"), leaf2: RGBA("#2b8a52"), pot: RGBA("#d9683a"), sky: RGBA("#b5d9d4"), cloud: RGBA("#ffffff"), sun: RGBA("#ffd84d"), star: RGBA("#b5d9d4"), lampOn: RGBA("#ffe27a"),
+        lampOff: RGBA("#e7a04a"), cone: RGBA(255, 226, 122, 0), shadow: RGBA(35, 40, 69, 0.2), grass: RGBA("#88ae86"), dim: RGBA(35, 40, 69, 0.38), white: RGBA("#ffffff"), bldg: RGBA("#273f39"), card: RGBA("#fffdf4"),
+        walls: [RGBA("#ecebd2"), RGBA("#f4d8ba"), RGBA("#d9dfcf"), RGBA("#f3e6bf")])
 
     public static let night = Palette(
-        ink: RGBA("#141833"), slab: RGBA("#141833"), hatch: RGBA("#2a3266"), wall: RGBA("#2f3b76"), dot: RGBA("#384588"), wall2: RGBA("#253066"), base: RGBA("#1b2452"),
+        ink: RGBA("#1c2b35"), slab: RGBA("#1c2b35"), hatch: RGBA("#2a3266"), wall: RGBA("#485461"), dot: RGBA("#384588"), wall2: RGBA("#394850"), base: RGBA("#1b2452"),
         floor: RGBA("#8a6248"), plank: RGBA("#6f4a34"), wood: RGBA("#a9683a"), wood2: RGBA("#7a4424"), back: RGBA("#5a4a68"), metal: RGBA("#7f8fb8"), metal2: RGBA("#4f5d86"), tower: RGBA("#1d2248"),
-        screen: RGBA("#141833"), on: RGBA("#d9fbff"), code: RGBA("#2f8fe8"), off: RGBA("#3a446f"), box: RGBA("#dfaa55"), box2: RGBA("#9c6b22"), boxD: RGBA("#84cf9a"), boxD2: RGBA("#2f7f4c"),
-        door: RGBA("#a9683a"), door2: RGBA("#7a4424"), sofa: RGBA("#3f8576"), sofa2: RGBA("#2c6558"), paper: RGBA("#fffdf4"), pink: RGBA("#ff4f9a"), red: RGBA("#ef4b4b"), amber: RGBA("#ffc23d"),
-        green: RGBA("#3fc46f"), leaf: RGBA("#2f9358"), leaf2: RGBA("#1f6d40"), pot: RGBA("#b9552e"), sky: RGBA("#141a3c"), cloud: RGBA("#2a3266"), sun: RGBA("#f4f1d0"), star: RGBA("#f4f1d0"), lampOn: RGBA("#ffe27a"),
-        lampOff: RGBA("#6b5a3a"), cone: RGBA(255, 226, 122, 0.12), shadow: RGBA(0, 0, 0, 0.3), grass: RGBA("#2f6a4a"), dim: RGBA(8, 10, 28, 0.55), white: RGBA("#ffffff"), bldg: RGBA("#141833"), card: RGBA("#aab3d6"),
-        walls: [RGBA("#2f3b76"), RGBA("#5a3f55"), RGBA("#3d3a78"), RGBA("#5a5236")])
+        screen: RGBA("#1c2b35"), on: RGBA("#d9fbff"), code: RGBA("#2f8fe8"), off: RGBA("#3a446f"), box: RGBA("#dfaa55"), box2: RGBA("#9c6b22"), boxD: RGBA("#84cf9a"), boxD2: RGBA("#2f7f4c"),
+        door: RGBA("#a9683a"), door2: RGBA("#7a4424"), sofa: RGBA("#3f8576"), sofa2: RGBA("#2c6558"), paper: RGBA("#fffdf4"), pink: RGBA("#ff91aa"), red: RGBA("#ef4b4b"), amber: RGBA("#ffc23d"),
+        green: RGBA("#3fc46f"), leaf: RGBA("#2f9358"), leaf2: RGBA("#1f6d40"), pot: RGBA("#b9552e"), sky: RGBA("#293b50"), cloud: RGBA("#2a3266"), sun: RGBA("#f4f1d0"), star: RGBA("#f4f1d0"), lampOn: RGBA("#ffe27a"),
+        lampOff: RGBA("#6b5a3a"), cone: RGBA(255, 226, 122, 0.12), shadow: RGBA(0, 0, 0, 0.3), grass: RGBA("#2f6a4a"), dim: RGBA(8, 10, 28, 0.55), white: RGBA("#ffffff"), bldg: RGBA("#1c2b35"), card: RGBA("#aab3d6"),
+        walls: [RGBA("#485461"), RGBA("#694f55"), RGBA("#494c62"), RGBA("#5a5236")])
 
     public static func of(night: Bool) -> Palette { night ? .night : .day }
 }
