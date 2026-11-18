@@ -20,7 +20,7 @@ import contextlib, fcntl, fnmatch, json, os, re, shlex, shutil, subprocess, sys,
 from datetime import datetime, timezone
 
 USAGE = '''사용: eval-goal.sh <하위 명령> <HANDOFF.md> [인자...]
-  check                                   완료 조건·경계·저장소·pathspec·자동 승인 검사
+  check                                   완료 조건·경계·저장소·pathspec·자동 승인 검사(auto 는 폴더 신뢰·Bash 전체 허용도)
   init                                    check 통과 뒤 goal/state.json 생성
   run                                     조건 명령 평가(반복 +1)
   treekey <slug>                          작업 트리 키(기본 저장소는 계획 문서 제외)
@@ -28,7 +28,9 @@ USAGE = '''사용: eval-goal.sh <하위 명령> <HANDOFF.md> [인자...]
   unit <UNIT> start|checkwt|commit -m <메시지>|merge|cleanup|recover|discard
   fix add <NAME> --key <키> --repo <slug> --files <경로,...> --summary <한 줄>
   redeleg <키> incr|get|reset
-  stop <사유> · clear-stop · state get <키> · state set <키> <값> · status-json'''
+  stop <사유> · clear-stop · state get <키> · state set <키> <값> · status-json
+  prep                                    저장소마다 .claude/settings.local.json 에 "Bash" 허용을 더하고 인계 문서에 기록
+  unprep                                  prep 가 기록한 "Bash" 허용만 지우고 기록 줄도 지운다'''
 
 NOCHANGE = '없음(변경 없음)'
 STOPS = {'rotate', 'done', 'limit:iterations', 'limit:duration', 'expired', 'judge-fail', 'timeout-survivors',
@@ -106,9 +108,22 @@ def now_iso():
     return datetime.now().astimezone().isoformat(timespec='seconds')
 
 
-def elapsed(st):
-    t = datetime.fromisoformat(st['started_at'])
+def since(iso):
+    t = datetime.fromisoformat(iso)
     return (datetime.now(timezone.utc) - (t if t.tzinfo else t.astimezone())).total_seconds()
+
+
+def elapsed(st):
+    # 중단된 동안은 시간이 멈춘다: 벽시계에서 지난 중단 구간 합(paused_sec)과 지금 중단 구간을 뺀다. 옛 state.json 은 키가 없어 0 이다.
+    e = since(st['started_at']) - float(st.get('paused_sec') or 0)
+    e -= max(0.0, since(st['stopped_at'])) if st.get('stopped_at') else 0
+    return max(0.0, e)
+
+
+def unpause(s):
+    # 중단을 풀 때 부른다: 지금 중단 구간을 paused_sec 에 더하고 stopped_at 을 지운다
+    if s.get('stopped_at'):
+        s['paused_sec'] = int(round(float(s.get('paused_sec') or 0) + max(0.0, since(s.pop('stopped_at')))))
 
 
 def dur(v):
@@ -763,8 +778,11 @@ def stop(c, reason):
         if c.row(reason[8:]).get('상태') != 'blocked':
             ok, why = phase(c, 'halt', reason[8:], reason)
             why = None if ok else why
+    def fn(s):  # 이미 중단 중이면 처음 중단 시각을 둔다(그때부터 시간이 멈춰 있다)
+        s['stopped_reason'] = reason
+        s.setdefault('stopped_at', now_iso())
     with c.locked():
-        c.update(lambda s: s.__setitem__('stopped_reason', reason))
+        c.update(fn)
         c.set_line('중단', None if reason in ('rotate', 'done') else reason)
     if why:
         print(f'주의: phase.sh halt {reason} 거부: {why}')
@@ -988,6 +1006,61 @@ def expired(c, U, st):
     return None
 
 
+def trust_hint(p):
+    return f"새 터미널에서 `cd {p} && claude`를 열고 'Yes, I trust this folder'를 고른 뒤 닫는다"
+
+
+def trusted_dirs():
+    # Claude Code 전역 설정(projects)에서 신뢰를 승인한 경로들 → (경로 집합, 설정 파일, 오류). 이 파일은 읽기만 한다:
+    # 실행 중인 Claude 프로세스들이 같은 파일을 계속 다시 쓰므로 덮어쓰면 데이터가 사라질 수 있다.
+    cfg = os.environ.get('MMCODE_CLAUDE_CONFIG') or os.path.expanduser('~/.claude.json')
+    try:
+        projects = json.loads(read(cfg)).get('projects') or {}
+        return {os.path.realpath(k) for k, v in projects.items() if isinstance(v, dict) and v.get('hasTrustDialogAccepted') is True}, cfg, None
+    except (OSError, ValueError, AttributeError) as e:
+        return set(), cfg, f'{type(e).__name__}: {e}'
+
+
+def is_trusted(p, dirs):
+    # 그 경로나 상위 경로 하나라도 신뢰했으면 참
+    while True:
+        if p in dirs:
+            return True
+        up = os.path.dirname(p)
+        if up == p:
+            return False
+        p = up
+
+
+def bash_allowed(p):
+    # 저장소의 .claude/settings.local.json·settings.json 의 permissions.allow 에 정확히 "Bash" 가 있으면 그 파일 이름
+    for name in ('settings.local.json', 'settings.json'):
+        try:
+            allow = json.loads(read(os.path.join(p, '.claude', name))).get('permissions', {}).get('allow')
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(allow, list) and 'Bash' in allow:
+            return name
+    return None
+
+
+def prereqs(repos, say):
+    # auto 사전 조건(저장소마다): 폴더 신뢰(새 세션이 신뢰 확인 창에서 멈추지 않게)·Bash 전체 허용(무인 중 승인 창에서 멈추지 않게)
+    codex = os.environ.get('ROTATE_KIND') == 'codex'
+    dirs, cfg, err = (set(), None, None) if codex else trusted_dirs()
+    for s, p in repos.items():
+        if codex:
+            say(True, f'폴더 신뢰 {s} — ROTATE_KIND=codex 라 건너뛴다')
+        elif err:
+            say(False, f'폴더 신뢰 {s}={p} — 설정 파일 {cfg} 를 읽지 못했다({err}). {trust_hint(p)}')
+        else:
+            ok = is_trusted(p, dirs)
+            say(ok, f'폴더 신뢰 {s}={p}' + ('' if ok else f' — {cfg} 에 신뢰 기록이 없다. {trust_hint(p)}'))
+        where = bash_allowed(p)
+        say(bool(where), f'Bash 전체 허용 {s}: ' + (f'.claude/{where}' if where else
+            f'{p}/.claude/settings.local.json·settings.json 의 permissions.allow 에 "Bash" 가 없다 — `eval-goal.sh prep <HANDOFF.md>`로 넣는다'))
+
+
 def do_check(c):
     # 항목마다 PASS/FAIL 한 줄을 찍고 거부 수를 돌려준다
     bad = [0]
@@ -1026,6 +1099,7 @@ def do_check(c):
             note = ([] if spec['fix'] else ['"(보정 단위 포함)" 이 없다(auto 는 보정 단위까지 미리 승인받는다)']) + \
                    ([f'범위 밖 단위 {", ".join(miss)}'] if miss else [])
             say(not note, f'커밋 정책: 자동 승인 {spec["text"]} / 만료 {spec["until"]}' + (' — ' + '; '.join(note) if note else ''))
+        prereqs(repos, say)
     else:
         print(f'INFO 모드: {mode or "(없음)"} — auto 가 아니라 커밋 정책을 보지 않는다')
     for name, _, raw, val in c.bounds(len(units))[1]:
@@ -1674,8 +1748,11 @@ def cmd_clear_stop(c, rest):
     if rest:
         raise Usage(USAGE)
     c.state()
+    def fn(s):
+        s['stopped_reason'] = ''
+        unpause(s)
     with c.locked():
-        c.update(lambda s: s.__setitem__('stopped_reason', ''))
+        c.update(fn)
         c.set_line('중단', None)
     print('OK: clear-stop')
 
@@ -1697,6 +1774,8 @@ def cmd_state(c, rest):
         *path, last = rest[1].split('.')
 
         def setp(d):
+            if rest[1] == 'stopped_reason' and not val:  # 중단을 푸는 다른 경로도 clear-stop 과 같이 중단 구간을 누적한다
+                unpause(d)
             for k in path:
                 d = d.setdefault(k, {})
                 if not isinstance(d, dict):
@@ -1725,10 +1804,159 @@ def cmd_status_json(c, rest):
                      ensure_ascii=False))
 
 
+PREP = re.compile(r'- prep: (.+?) permissions\.allow "Bash"(?: \((적용 전|적용됨)\))?.*')  # "종료 시 제거" 절의 prep 기록 줄
+ENDSEC = re.compile(r'##\s*종료 시 제거\s*$')
+
+
+def prep_lines(L):
+    # "종료 시 제거" 절 안, 코드 펜스 밖의 prep 기록 줄 → [(줄 번호, 경로, 상태)]. 다른 절·예시는 보지 않는다
+    h = next((i for i, l in enumerate(L) if ENDSEC.match(l)), None)
+    res, fence = [], False
+    for i in range(h + 1, len(L)) if h is not None else ():
+        if L[i].startswith('## '):
+            break
+        if L[i].lstrip().startswith('```'):
+            fence = not fence
+        elif not fence and PREP.fullmatch(L[i]):
+            m = PREP.fullmatch(L[i])
+            res.append((i, m.group(1), m.group(2)))
+    return res
+
+
+def prep_target(c, f):
+    # 기록 경로가 이 계획 저장소의 .claude/settings.local.json 이고 실제 위치도 그 저장소 안일 때만 그 경로. 아니면 None
+    rf = os.path.realpath(f)
+    for p in c.repos()[0].values():
+        want = os.path.join(p, '.claude', 'settings.local.json')
+        if rf == os.path.realpath(want) and rf.startswith(p + os.sep):
+            return want
+    return None
+
+
+def load_settings(f):
+    # 설정 파일 → dict(없으면 빈 dict). 못 읽으면 덮어쓰지 않고 멈춘다
+    if not os.path.exists(f):
+        return {}
+    try:
+        d = json.loads(read(f))
+    except (OSError, ValueError) as e:
+        raise Blocked(f'{f} 를 읽지 못했다({e}) — 고치지 않는다')
+    if not isinstance(d, dict) or not isinstance(d.get('permissions', {}), dict) or not isinstance(d.get('permissions', {}).get('allow', []), list):
+        raise Blocked(f'{f} 의 permissions.allow 가 목록이 아니다 — 고치지 않는다')
+    return d
+
+
+def set_record(c, f, state):
+    # f 의 기록 줄을 state(적용 전·적용됨)로 쓰거나(없으면 더한다) state 가 None 이면 지운다
+    def fn():
+        L = c.lines
+        old = [i for i, g, _ in prep_lines(L) if g == f]
+        for i in reversed(old):
+            del L[i]
+        if state is None:
+            return
+        line = f'- prep: {f} permissions.allow "Bash" ({state}) eval-goal.sh unprep 가 지운다'
+        if old:
+            L.insert(old[0], line)
+            return
+        h = next((i for i, l in enumerate(L) if ENDSEC.match(l)), None)
+        if h is None:
+            while L and not L[-1].strip():
+                L.pop()
+            L += ['', '## 종료 시 제거']
+            h = len(L) - 1
+        end = next((i for i in range(h + 1, len(L)) if L[i].startswith('## ')), len(L))
+        keep = [l for l in L[h + 1:end] if not re.fullmatch(r'-\s*(없음|\(없으면 "없음"\))\s*', l)]
+        while keep and not keep[-1].strip():
+            keep.pop()
+        L[h + 1:end] = keep + [line, '']  # 다음 절 앞 빈 줄, 문서 끝이면 마지막 줄바꿈
+    c.edit(fn)
+
+
+def cmd_prep(c, rest):
+    # 저장소마다 .claude/settings.local.json 의 permissions.allow 에 "Bash" 를 더한다. 기록은 두 상태다:
+    # 쓰기 전 (적용 전), 쓰기 성공 뒤 (적용됨). unprep 는 (적용됨) 만 지운다. 명령 전체는 goal/.driver 아래에서 돈다.
+    if rest:
+        raise Usage(USAGE)
+    repos, _, errs = c.repos()
+    if errs:
+        raise Usage('저장소 오류: ' + '; '.join(errs))
+    todo = []
+    for s, p in repos.items():
+        where = bash_allowed(p)
+        if where:
+            print(f'이미 있다: {s} .claude/{where} 의 permissions.allow 에 "Bash" — 쓰지 않는다')
+            continue
+        f = prep_target(c, os.path.join(p, '.claude', 'settings.local.json'))
+        if not f:
+            raise Blocked(f'{s}: .claude/settings.local.json 이 저장소 밖을 가리킨다(심볼릭 링크) — 고치지 않는다')
+        load_settings(f)  # 못 읽는 파일이면 기록도 남기지 않고 멈춘다
+        todo.append(f)
+    for f in todo:
+        set_record(c, f, '적용 전')
+        d = load_settings(f)  # 쓰기 직전에 다시 읽는다: 그 사이 사용자가 바꾼 내용을 덮지 않는다
+        allow = d.setdefault('permissions', {}).setdefault('allow', [])
+        if 'Bash' in allow:
+            set_record(c, f, None)
+            print(f'이미 있다: {f} 의 permissions.allow 에 "Bash"(그 사이 들어왔다) — 쓰지 않고 기록도 지운다')
+            continue
+        allow.append('Bash')
+        try:
+            write_atomic(f, json.dumps(d, ensure_ascii=False, indent=2) + '\n')
+        except OSError as e:  # 기록은 (적용 전)으로 남는다. unprep 는 이 기록으로 설정을 지우지 않는다
+            raise Blocked(f'{f} 쓰기 실패({e}) — 기록은 (적용 전)으로 남았다')
+        set_record(c, f, '적용됨')
+        print(f'더함: {f} permissions.allow "Bash" (인계 문서 "종료 시 제거"에 기록)')
+    print('OK: prep')
+
+
+def cmd_unprep(c, rest):
+    # "종료 시 제거" 절의 (적용됨) 기록만 지운다. 사용자가 원래 둔 "Bash" 는 기록이 없어 건드리지 않는다
+    if rest:
+        raise Usage(USAGE)
+    recs = {}
+    for _, f, state in prep_lines(c.lines):  # 같은 경로의 줄이 여럿이면 하나라도 (적용됨)이 아니면 적용 전으로 본다
+        recs[f] = state if recs.get(f, state) == state else None
+    if not recs:
+        print('prep 기록 없음 — 지울 것이 없다')
+    bad = []
+    for f, state in recs.items():
+        tgt = prep_target(c, f)
+        if not tgt:
+            print(f'경고: {f} 는 이 계획 저장소의 .claude/settings.local.json 이 아니다 — 건드리지 않는다')
+            bad.append(f)
+            continue
+        if state != '적용됨':
+            print(f'경고: {f} 기록이 (적용 전)이다. 소유 불명, 사용자가 확인한다 — 건드리지 않는다')
+            bad.append(f)
+            continue
+        try:
+            d = load_settings(tgt)  # 읽고 바로 고쳐 쓴다
+            allow = d.get('permissions', {}).get('allow', [])
+            if 'Bash' in allow:
+                del allow[len(allow) - 1 - allow[::-1].index('Bash')]  # prep 는 끝에 더했다
+                if not allow:
+                    del d['permissions']['allow']
+                if not d['permissions']:
+                    del d['permissions']
+                write_atomic(tgt, json.dumps(d, ensure_ascii=False, indent=2) + '\n')
+                print(f'지움: {tgt} permissions.allow "Bash"')
+            else:
+                print(f'이미 없다: {tgt} — 기록 줄만 지운다')
+        except (Blocked, OSError) as e:  # 이 파일은 기록을 남기고 나머지는 계속한다
+            print(f'못 지움: {e}')
+            bad.append(f)
+            continue
+        set_record(c, f, None)
+    if bad:
+        raise Blocked(f'못 지운 기록 {len(bad)}건 — 기록 줄을 남겼다. 사용자가 확인한다: {", ".join(bad)}')
+    print('OK: unprep')
+
+
 CMDS = {'check': cmd_check, 'init': cmd_init, 'run': cmd_run, 'treekey': cmd_treekey, 'clean': cmd_clean,
         'unit': cmd_unit, 'fix': cmd_fix, 'redeleg': cmd_redeleg, 'stop': cmd_stop, 'clear-stop': cmd_clear_stop,
-        'state': cmd_state, 'status-json': cmd_status_json}
-DRIVING = {'init', 'run', 'clean', 'unit', 'fix', 'redeleg'}  # git·조건 명령을 돌리는 명령만. stop·clear-stop·state 는 상태만 고치므로 제외
+        'state': cmd_state, 'status-json': cmd_status_json, 'prep': cmd_prep, 'unprep': cmd_unprep}
+DRIVING = {'init', 'run', 'clean', 'unit', 'fix', 'redeleg', 'prep', 'unprep'}  # git·조건 명령을 돌리는 명령과, 설정·기록을 함께 고치는 prep·unprep. stop·clear-stop·state 는 상태만 고치므로 제외
 
 try:
     if len(sys.argv) < 3 or sys.argv[1] not in CMDS:

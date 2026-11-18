@@ -520,11 +520,26 @@ U7 확인 항목:
 | 2 | S2 뒤 세션 교체가 2회 실패했다(`rotate-failed`) | 새 세션이 "trust this folder" 확인 창에서 멈춘다. saju 폴더는 `~/.claude.json`에 신뢰 기록이 없다. `rotate.sh:217-223`은 `idle`·`done`이 아니면 실패로 본다 | 근거 있음. 2026-11-17에 같은 방식으로 띄워 재현했다(saju: `blocked · trust this folder`, mmCode: 1초 만에 `idle`). 당시 실패 문구는 `reason=timeout`이었고 그 터미널은 지워져 직접 보지 못했다 |
 | 3 | 이름 붙인 일꾼이 SendMessage로 보낸 2단계 지시에 30분간 응답하지 않았다(S1) | 모름. 하네스 쪽 동작이다. relay·plan 문서는 이 방식을 지시하지 않는다(세션이 고른 방식) | 모름 |
 
-후속 과제(하지 않음, 사용자 결정 대기):
+후속 과제:
 
-1. 시간 상한에서 사람을 기다린 구간을 뺀다. 중단 시각과 재개 시각을 `state.json`에 적고 그 차이를 뺀다.
-2. `rotate.sh`가 `blocked` 상태의 사유를 실패 문구에 넣는다. `eval-goal.sh check`가 폴더 신뢰 기록을 미리 본다. 신뢰 승인은 사용자가 한다(권한 경계).
-3. relay 문서에 "단계마다 새 일꾼을 띄운다"를 적는다(교훈 `~/.claude/lessons/named-teammate-sendmessage-no-reply.md`).
+1. (2026-11-18 반영) 시간 상한에서 중단된 구간을 뺀다. `stop`이 `stopped_at`을 적고, 중단을 풀 때 `paused_sec`에 더한다.
+2. (2026-11-18 반영) `rotate.sh` 실패 문구에 `hc get`의 상태 사유를 넣는다. `eval-goal.sh check`가 auto 사전 조건 두 개를 본다: 폴더 신뢰(읽기만), 프로젝트 `.claude/settings.local.json`의 Bash 전체 허용(사용자 지시). Bash 허용은 시작할 때 사용자 확인 뒤 `prep`이 넣고 끝날 때 `unprep`이 넣은 것만 뺀다. 신뢰 승인은 사용자가 한다.
+3. (하지 않음) relay 문서에 "단계마다 새 일꾼을 띄운다"를 적는다(교훈 `~/.claude/lessons/named-teammate-sendmessage-no-reply.md`).
+
+1·2번 검증: 시험 eval-goal 244·rotate 30·phase 42·status 9 통과. 독립 검수(opus) PASS. 교차 검토 codex 1회차 FAIL(필수 4건) → 2회차 FAIL(1건 해결, 3건 일부 남음, 새 1건), agy 1회차 PASS. 기록: 작업 폴더의 `docs/relay/review-prep/`를 `docs/review/2026-11-18-relay-prep/`로 옮겼다. 회차 상한에 닿아 사용자가 "기록하고 커밋"을 골랐다(2026-11-18).
+
+보장하지 못하는 것(prep·unprep. 모두 평소 사용에서는 생기지 않는다):
+
+| # | 언제 | 생기면 | 복구 |
+|---|---|---|---|
+| 1 | 같은 저장소에서 auto 계획 2개가 동시에 prep·unprep를 돌림(잠금이 계획 단위) | 한 계획이 끝나며 다른 계획이 쓰는 Bash 허용을 지운다 | 그 계획에서 `eval-goal.sh prep` 1번 |
+| 2 | 설정을 다시 읽은 뒤 쓰기 전 몇 ms 사이에 다른 프로그램이 같은 파일을 씀 | 그 변경 1건이 덮인다 | 다시 입력 |
+| 3 | 인계 문서 `## 종료 시 제거` 절에 `~~~` 코드 블록으로 실제 경로의 `(적용됨)` 예시 줄을 적음 | 사용자가 넣은 Bash 허용을 unprep가 지운다 | 다시 넣기 1번 |
+| 4 | 인계 문서 앞쪽 코드 블록 안에 `## 종료 시 제거` 제목을 예시로 적음 | prep 기록이 그 예시 아래에 붙고 unprep가 찾지 못해 허용이 남는다 | `close`에서 보이고 사용자가 지움 |
+
+구조로 없애는 방법(하지 않음): 기록을 마크다운 대신 `goal/prep.json`에 두고, 잠금을 저장소 단위로 옮기고, 쓰기 직전 내용이 바뀌었으면 거부한다.
+
+후속 제안(독립 검수): `stopped_at`이 형식에 안 맞으면 traceback(손으로 넣을 때만), prep가 만든 빈 `{}` 파일이 남음, deny·ask 규칙과 전역 `"Bash"`는 보지 않음, 깨진 JSON일 때 check 안내에 "파일을 먼저 고친다" 추가, `status.sh` 경과 표시는 여전히 벽시계.
 
 - 2026-11-17: 절차 변경 4건(점검 경로, 버그 가르기, 선례 비교, 리팩터 전 변형 측정)을 넣고 변경 전후를 가려서 비교했다. 기록은 `docs/review/2026-11-17-go-audit-triage.md`다. 커밋하지 않았다.
 

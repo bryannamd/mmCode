@@ -26,7 +26,9 @@ name=; prev=
 for a in "$@"; do [ "$prev" = --name ] && name=$a; prev=$a; done
 case "${1:-}" in
   get)
-    if [ -n "${FAKE_NO_LABELS:-}" ]; then echo '{"address":"t1","labels":{},"state":"live","status":null,"turn":0}'
+    # 새 터미널(t1 이 아닌 주소)의 상태를 FAKE_TERM_STATUS(hc get 의 status 객체 JSON)로 정한다
+    if [ "${3:-}" != t1 ] && [ -n "${FAKE_TERM_STATUS:-}" ]; then echo "{\"address\":\"$3\",\"labels\":{},\"state\":\"live\",\"status\":$FAKE_TERM_STATUS,\"turn\":0}"
+    elif [ -n "${FAKE_NO_LABELS:-}" ]; then echo '{"address":"t1","labels":{},"state":"live","status":null,"turn":0}'
     else echo '{"address":"t1","labels":{"herdr.space":"s1","herdr.tab":"tab1","where":"sp / tb"},"state":"live","status":{"app":"claude-code","state":"working"},"turn":3}'; fi ;;
   run)
     [ -z "${FAKE_RUN_FAIL:-}" ] || fail spawn_failed
@@ -373,6 +375,18 @@ t_not_ready() {  # 새 세션이 준비되지 않음(대기 초과·blocked) = �
     has "$err" "status=" "$w $m stderr" || return 1
   done; done
 }
+t_not_ready_reason() {  # 잡을 결함: 준비 실패 문구에 멈춘 이유(hc get 의 kind·msg)가 없어 신뢰 확인 창인지 알 수 없다
+  mkcase auto; extra=(FAKE_WAIT=blocked 'FAKE_TERM_STATUS={"app":"claude-code","kind":"permission","msg":"trust this folder","state":"blocked"}')
+  rot demo "$handoff"
+  eq "$rc" 1 "exit(stderr: $err)" || return 1
+  has "$err" "status=blocked kind=permission msg=trust this folder" stderr || return 1
+  has "$err" "claude를 한 번 열어 신뢰를 승인한 뒤 다시 시도" stderr || return 1
+  order '^get --json t7' '^kill t7' '^rm t7' || return 1
+  mkcase plain; extra=(FAKE_WAIT=timeout 'FAKE_TERM_STATUS={"app":"claude-code","kind":"question","msg":"pick one","state":"blocked"}')
+  rot demo "$handoff"
+  has "$err" "kind=question msg=pick one" "질문 stderr" || return 1
+  lacks "$err" "신뢰를 승인" "질문 stderr" || return 1
+}
 t_wait_message() {  # 준비 대기가 나에게 온 메시지로 끊기면 다시 기다린다. 계속 끊기면(3회) 준비 실패로 본다
   mkcase plain; extra=(FAKE_WAIT=message-once)
   rot demo "$handoff"
@@ -498,6 +512,6 @@ run() { why=; if "t_$1"; then pass=$((pass + 1)); echo "PASS $1"; else fail=$((f
 for t in print_claude print_codex print_plain print_position print_missing auto_detect \
          serial_auto serial_plain serial_locked serial_race_values serial_bytes claim_concurrent serial_line_gone codex_wait labels \
          start_fail not_ready prompt_fail_auto prompt_fail_twice prompt_fail_plain state_write_fail esc_fail input_errors outside_herdr \
-         name_taken hc_bin wait_message send_message run_stderr; do run "$t"; done
+         name_taken hc_bin wait_message send_message run_stderr not_ready_reason; do run "$t"; done
 echo "시험 $((pass + fail))개 · 실패 ${fail}개"
 [ "$fail" -eq 0 ]

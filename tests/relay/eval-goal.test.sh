@@ -10,6 +10,9 @@ trap 'rm -rf "$TMP"' EXIT
 # 사용자 전역 git 설정(훅·서명·기본 브랜치)을 읽지 않는다
 export GIT_CONFIG_GLOBAL="$TMP/gitconfig" GIT_CONFIG_NOSYSTEM=1 MARK="$TMP/mark" COUNT="$TMP/count" PIDF="$TMP/child.pid"
 printf '[init]\n\tdefaultBranch = main\n[advice]\n\tdetachedHead = false\n' > "$GIT_CONFIG_GLOBAL"
+# auto 사전 조건(폴더 신뢰)은 실제 ~/.claude.json 대신 시험용 설정을 읽는다. $TMP 를 신뢰한 상태가 기본이다
+export MMCODE_CLAUDE_CONFIG="$TMP/claude.json"; unset ROTATE_KIND
+printf '{"projects": {"%s": {"hasTrustDialogAccepted": true}}}\n' "$TMP" > "$MMCODE_CLAUDE_CONFIG"
 REALGIT=$(command -v git)
 NOCH='없음(변경 없음)'
 PASS=0 FAIL=0 OUT='' RC=0
@@ -60,6 +63,7 @@ mkrepo() { # <폴더>: 시험 파일·스크립트와 첫 커밋이 있는 저�
   sh_ "$d/mark.sh" 'echo ran > "$MARK"'
   sh_ "$d/count.sh" 'echo x >> "$COUNT"'
   printf 'echo no\n' > "$d/noexec.sh"
+  mkdir -p "$d/.claude"; printf '{"permissions": {"allow": ["Bash"]}}\n' > "$d/.claude/settings.local.json"   # auto 사전 조건(Bash 전체 허용)
   git -C "$d" add -A && git -C "$d" commit -q -m init
 }
 # 인계 문서: $1 완료 조건 cmd 블록 · $2 상태표 행 · $3 재개 블록에 더할 줄(선택). MODE·POLICY 로 바꿀 수 있다.
@@ -971,6 +975,123 @@ setup u6f "$OKCMD" "$(row U1 src/a.txt)"
 perl -pi -e 's/\| 커밋 \|$/| 커밋 | 비고 |/; s/^(\|---.*)$/$1---|/; s/^(\| U1 .*)$/$1 x |/' "$H"
 eg check "$H"
 t "U6 머리글: 모르는 열(비고)이 있으면 오류" '[ $RC = 1 ] && has "머리글"'
+
+# ── 중단 중 시간 정지(paused_sec·stopped_at) ─────────────
+ago() { python3 -I -c 'import sys, datetime as d; print((d.datetime.now(d.timezone.utc) - d.timedelta(seconds=int(sys.argv[1]))).isoformat(timespec="seconds"))' "$1"; }
+near() { python3 -I -c 'import sys; a, b = map(float, sys.argv[1:3]); sys.exit(0 if abs(a - b) <= 60 else 1)' "$1" "$2"; }   # 60초 안이면 참
+# 잡을 결함: 중단된 채 사람을 기다린 시간까지 경과 시간에 들어가 limit:duration 으로 다시 멈춘다
+setup pz "$OKCMD" "$TWO"; must init "$H"; must state "$H" set started_at "$(ago 7200)"
+must stop "$H" limit:duration
+t "시간 정지: stop 이 stopped_at 을 적는다" 'sget stopped_at | grep -Eq "^[0-9]{4}-"'
+must state "$H" set stopped_at "$(ago 3600)"; eg status-json "$H"
+t "시간 정지: 중단 중에는 경과 시간이 늘지 않는다(2h 전 시작·1h 전 중단 → 약 1h)" '[ $RC = 0 ] && near "$(jget elapsed_sec)" 3600'
+must clear-stop "$H"; eg status-json "$H"
+t "시간 정지: clear-stop 이 중단 구간을 paused_sec 에 더하고 stopped_at 을 지운다" 'near "$(sget paused_sec)" 3600 && absent stopped_at && near "$(jget elapsed_sec)" 3600'
+must stop "$H" scope; must state "$H" set stopped_at "$(ago 1000)"; must state "$H" set stopped_reason '""'
+t "시간 정지: state set stopped_reason \"\" 도 중단 구간을 누적한다" 'near "$(sget paused_sec)" 4600 && absent stopped_at'
+must stop "$H" rotate; must state "$H" set stopped_at "$(ago 600)"; must stop "$H" rotate-failed
+t "시간 정지: 중단 중 다시 stop 해도 처음 중단 시각을 유지한다" 'near "$(python3 -I -c "import sys, datetime as d; print((d.datetime.now(d.timezone.utc) - d.datetime.fromisoformat(sys.argv[1])).total_seconds())" "$(sget stopped_at)")" 600'
+# 잡을 결함: 새 키(paused_sec·stopped_at)가 없는 옛 state.json 에서 status-json·clear-stop 이 깨진다
+setup pz2 "$OKCMD" "$TWO"; must init "$H"
+python3 -I - "$P/goal/state.json" "$(ago 7200)" <<'PYT'
+import json, sys
+p, t = sys.argv[1:]
+d = json.load(open(p, encoding='utf-8'))
+d.update(started_at=t, stopped_reason='limit:duration')
+for k in ('paused_sec', 'stopped_at'):
+    d.pop(k, None)
+open(p, 'w', encoding='utf-8').write(json.dumps(d))
+PYT
+eg status-json "$H"
+t "옛 state.json: 새 키 없으면 0 으로 읽는다(벽시계 그대로)" '[ $RC = 0 ] && near "$(jget elapsed_sec)" 7200'
+eg clear-stop "$H"; a=$RC; eg status-json "$H"
+t "옛 state.json: clear-stop 이 동작하고 경과 시간이 그대로다" '[ $a = 0 ] && [ -z "$(sget stopped_reason)" ] && near "$(jget elapsed_sec)" 7200'
+
+# ── auto 사전 조건: 폴더 신뢰·Bash 전체 허용 ─────────────
+# 잡을 결함: 폴더 신뢰 기록이 없는 저장소로 auto 를 시작해 세션 교체가 신뢰 확인 창에서 멈춘다
+setup tr1 "$OKCMD" "$(row U1 src/a.txt)"
+printf '{"projects": {"%s": {"hasTrustDialogAccepted": false}}}\n' "$R" > "$TMP/cfg-no.json"
+OUT=$(MMCODE_CLAUDE_CONFIG="$TMP/cfg-no.json" bash "$EG" check "$H" 2>&1); RC=$?
+t "사전 조건: 신뢰 기록 없음 → FAIL 과 사용자 할 일" '[ $RC = 1 ] && hasline "FAIL 폴더 신뢰" "cd $R && claude" && has "Yes, I trust this folder"'
+OUT=$(MMCODE_CLAUDE_CONFIG="$TMP/cfg-no.json" bash "$EG" init "$H" 2>&1); RC=$?
+t "사전 조건: 신뢰 없으면 init 도 거부" '[ $RC = 1 ] && has "FAIL 폴더 신뢰" && [ ! -e "$P/goal/state.json" ]'
+OUT=$(MMCODE_CLAUDE_CONFIG="$TMP/none.json" bash "$EG" check "$H" 2>&1); RC=$?
+t "사전 조건: 설정 파일이 없으면 FAIL" '[ $RC = 1 ] && hasline "FAIL 폴더 신뢰" "none.json"'
+printf '{"projects": {"%s": {"hasTrustDialogAccepted": true}}}\n' "$(dirname "$R")" > "$TMP/cfg-up.json"
+OUT=$(MMCODE_CLAUDE_CONFIG="$TMP/cfg-up.json" bash "$EG" check "$H" 2>&1); RC=$?
+t "사전 조건: 상위 경로 신뢰 → PASS" '[ $RC = 0 ] && has "PASS 폴더 신뢰"'
+# 잡을 결함: 경로를 접두 문자열로 비교해 /a/tr 신뢰를 이웃 폴더 /a/tr1 신뢰로 오인한다
+printf '{"projects": {"%s": {"hasTrustDialogAccepted": true}}}\n' "${R%?}" > "$TMP/cfg-nb.json"
+OUT=$(MMCODE_CLAUDE_CONFIG="$TMP/cfg-nb.json" bash "$EG" check "$H" 2>&1); RC=$?
+t "사전 조건: 이름이 겹치는 이웃 폴더 신뢰는 인정하지 않는다" '[ $RC = 1 ] && has "FAIL 폴더 신뢰"'
+OUT=$(ROTATE_KIND=codex MMCODE_CLAUDE_CONFIG="$TMP/none.json" bash "$EG" check "$H" 2>&1); RC=$?
+t "사전 조건: ROTATE_KIND=codex 면 신뢰 검사를 건너뛴다" '[ $RC = 0 ] && hasline "PASS 폴더 신뢰" "codex"'
+MODE=manual mkhandoff "$OKCMD" "$(row U1 src/a.txt)"
+OUT=$(MMCODE_CLAUDE_CONFIG="$TMP/none.json" bash "$EG" check "$H" 2>&1); RC=$?
+t "사전 조건: auto 가 아니면 보지 않는다" '[ $RC = 0 ] && ! has "폴더 신뢰"'
+# 잡을 결함: Bash 전체 허용 없이 auto 를 시작해 무인 중 승인 창에서 멈춘다
+setup ba1 "$OKCMD" "$(row U1 src/a.txt)"
+printf '{"permissions": {"allow": ["Bash(git:*)"]}}\n' > "$R/.claude/settings.local.json"; eg check "$H"
+t "사전 조건: Bash 전체 허용 없음(Bash(git:*) 만) → FAIL 과 prep 안내" '[ $RC = 1 ] && hasline "FAIL Bash 전체 허용" "eval-goal.sh prep"'
+printf '{"permissions": {"allow": ["Bash"]}}\n' > "$R/.claude/settings.json"; eg check "$H"
+t "사전 조건: settings.json 의 Bash 도 통과" '[ $RC = 0 ] && has "PASS Bash 전체 허용"'
+# 잡을 결함: prep 가 다른 설정을 지우거나, 두 번 부르면 중복으로 더하고 기록한다
+setup pp1 "$OKCMD" "$(row U1 src/a.txt)"
+SL="$R/.claude/settings.local.json"
+printf '{"permissions": {"allow": ["Read"], "deny": ["Bash(rm:*)"]}, "env": {"A": "1"}}\n' > "$SL"
+eg prep "$H"
+t "prep: Bash 를 더하고 다른 키·항목은 그대로" '[ $RC = 0 ] && python3 -I -c "import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d == {\"permissions\": {\"allow\": [\"Read\", \"Bash\"], \"deny\": [\"Bash(rm:*)\"]}, \"env\": {\"A\": \"1\"}} else 1)" "$SL"'
+t "prep: 인계 문서 종료 시 제거 절에 기록" 'grep -A3 "^## 종료 시 제거" "$H" | grep -qF -- "- prep: $SL permissions.allow \"Bash\" (적용됨)"'
+eg check "$H"; a=$RC
+cp "$H" "$TMP/h.before"; cp "$SL" "$TMP/sl.before"; eg prep "$H"
+t "prep: 두 번째는 아무것도 쓰지 않는다" '[ $a = 0 ] && [ $RC = 0 ] && has "이미" && cmp -s "$H" "$TMP/h.before" && cmp -s "$SL" "$TMP/sl.before"'
+# 잡을 결함: unprep 가 사용자가 원래 둔 "Bash" 까지 지운다
+eg unprep "$H"
+t "unprep: prep 가 더한 Bash 만 지우고 기록 줄도 지운다" '[ $RC = 0 ] && python3 -I -c "import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d == {\"permissions\": {\"allow\": [\"Read\"], \"deny\": [\"Bash(rm:*)\"]}, \"env\": {\"A\": \"1\"}} else 1)" "$SL" && ! grep -qF -- "- prep:" "$H"'
+setup pp2 "$OKCMD" "$(row U1 src/a.txt)"; SL="$R/.claude/settings.local.json"
+eg prep "$H"; a=$RC; eg unprep "$H"
+t "unprep: 사용자가 원래 둔 Bash 는 남긴다" '[ $a = 0 ] && [ $RC = 0 ] && grep -qF "\"Bash\"" "$SL" && ! grep -qF -- "- prep:" "$H"'
+setup pp3 "$OKCMD" "$(row U1 src/a.txt)"; SL="$R/.claude/settings.local.json"; rm -f "$SL"
+eg prep "$H"; a=$RC; b=$(cat "$SL" 2>/dev/null); eg unprep "$H"
+t "prep·unprep: 없던 파일을 만들고, 비워도 파일은 남긴다" '[ $a = 0 ] && printf "%s" "$b" | grep -qF "\"Bash\"" && [ $RC = 0 ] && [ -f "$SL" ] && ! grep -qF "Bash" "$SL"'
+
+# ── prep·unprep 동시 실행·오래된 사본·임의 경로·적용 전 기록 ─────
+hold() { # <잠금 파일> <초>: 다른 프로세스가 그 잠금을 쥔다. 쥔 뒤에 돌아오고 HOLD 에 PID 를 남긴다
+  rm -f "$TMP/held"
+  python3 -I -c 'import fcntl, sys, time; f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); open(sys.argv[3], "w").close(); time.sleep(float(sys.argv[2]))' "$1" "$2" "$TMP/held" &
+  HOLD=$!; while [ ! -e "$TMP/held" ]; do sleep 0.05; done
+}
+jeq() { python3 -I -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])) == json.loads(sys.argv[2]) else 1)' "$1" "$2"; }   # 파일 JSON == 기대 JSON
+# 잡을 결함: prep 가 기록을 쓴 뒤 설정을 쓰기 전에 unprep 가 끼어들어 기록 없는 Bash 허용이 남는다(명령 전체가 직렬화되지 않음)
+setup pq1 "$OKCMD" "$(row U1 src/a.txt)"; SL="$R/.claude/settings.local.json"
+printf '{"permissions": {"allow": ["Read"]}}\n' > "$SL"; mkdir -p "$P/goal"
+hold "$P/goal/.driver" 3; eg unprep "$H"; a=$RC; eg prep "$H"; b=$RC; wait "$HOLD"
+t "prep·unprep: 다른 명령이 계획을 실행 중이면 둘 다 거부한다(.driver)" '[ $a = 1 ] && [ $b = 1 ] && has ".driver" && jeq "$SL" "{\"permissions\": {\"allow\": [\"Read\"]}}" && ! grep -qF -- "- prep:" "$H"'
+# 잡을 결함: prep 가 처음 읽은 설정 사본을 그대로 써서, 그 사이 사용자가 바꾼 키·allow 항목을 덮어쓴다
+setup pq2 "$OKCMD" "$(row U1 src/a.txt)"; SL="$R/.claude/settings.local.json"
+printf '{"permissions": {"allow": ["Read"]}, "env": {"A": "old"}}\n' > "$SL"; mkdir -p "$P/goal"
+hold "$P/goal/.lock" 3                     # prep 는 설정을 읽은 뒤 기록 단계에서 이 잠금을 기다린다
+bash "$EG" prep "$H" > "$TMP/pq2.out" 2>&1 & pid=$!
+sleep 1; printf '{"permissions": {"allow": ["Read", "Write"]}, "env": {"A": "new"}}\n' > "$SL"
+wait "$pid"; a=$?; wait "$HOLD"; OUT=$(cat "$TMP/pq2.out"); RC=$a
+t "prep: 기록을 기다리는 동안 사용자가 바꾼 키·allow 항목을 보존한다" '[ $a = 0 ] && jeq "$SL" "{\"permissions\": {\"allow\": [\"Read\", \"Write\", \"Bash\"]}, \"env\": {\"A\": \"new\"}}" && grep -qF -- "- prep: $SL permissions.allow \"Bash\" (적용됨)" "$H"'
+# 잡을 결함: unprep 가 다른 절·코드 블록의 기록 줄이나 저장소 밖 경로(예: ~/.claude.json)를 고친다
+setup pq3 "$OKCMD" "$(row U1 src/a.txt)"
+OUTF="$TMP/outside.json"; printf '{"permissions": {"allow": ["Read", "Bash"]}}\n' > "$OUTF"
+printf '\n## 참고\n- prep: %s permissions.allow "Bash" (적용됨)\n\n## 종료 시 제거\n```text\n- prep: %s permissions.allow "Bash" (적용됨)\n```\n' "$OUTF" "$OUTF" >> "$H"
+eg unprep "$H"
+t "unprep: 다른 절·코드 블록의 기록 줄은 무시한다" '[ $RC = 0 ] && jeq "$OUTF" "{\"permissions\": {\"allow\": [\"Read\", \"Bash\"]}}"'
+printf -- '- prep: %s permissions.allow "Bash" (적용됨)\n' "$OUTF" >> "$H"; eg unprep "$H"
+t "unprep: 저장소 밖 경로 기록은 거부하고 줄을 남긴다" '[ $RC = 1 ] && jeq "$OUTF" "{\"permissions\": {\"allow\": [\"Read\", \"Bash\"]}}" && [ "$(tail -n 1 "$H")" = "- prep: $OUTF permissions.allow \"Bash\" (적용됨)" ]'
+setup pq3b "$OKCMD" "$(row U1 src/a.txt)"; mkdir -p "$TMP/linkdst"
+printf '{"permissions": {"allow": ["Read", "Bash"]}}\n' > "$TMP/linkdst/settings.local.json"
+rm -rf "$R/.claude"; ln -s "$TMP/linkdst" "$R/.claude"
+printf '\n## 종료 시 제거\n- prep: %s permissions.allow "Bash" (적용됨)\n' "$R/.claude/settings.local.json" >> "$H"; eg unprep "$H"
+t "unprep: 심볼릭 링크로 저장소 밖을 가리키는 설정은 거부한다" '[ $RC = 1 ] && jeq "$TMP/linkdst/settings.local.json" "{\"permissions\": {\"allow\": [\"Read\", \"Bash\"]}}"'
+# 잡을 결함: 설정 쓰기 전에 끊긴 prep 의 기록으로, 그 뒤 사용자가 넣은 Bash 를 unprep 가 지운다
+setup pq4 "$OKCMD" "$(row U1 src/a.txt)"; SL="$R/.claude/settings.local.json"
+printf '\n## 종료 시 제거\n- prep: %s permissions.allow "Bash" (적용 전)\n' "$SL" >> "$H"; eg unprep "$H"
+t "unprep: (적용 전) 기록은 설정을 건드리지 않고 소유 불명으로 거부한다" '[ $RC = 1 ] && has "소유 불명" && grep -qF "\"Bash\"" "$SL" && grep -qF -- "(적용 전)" "$H"'
 
 echo "통과 $PASS · 실패 $FAIL"
 [ "$FAIL" -eq 0 ]

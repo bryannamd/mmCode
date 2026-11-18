@@ -217,7 +217,12 @@ r_status=$(printf '%s' "$ready" | jq -r '.status // empty' 2>/dev/null) || r_sta
 case "$r_reason:$r_status" in
   status:idle|status:done) ;;
   *)
-    echo "새 세션이 준비되지 않았다($term $name): reason=${r_reason:-없음} status=${r_status:-없음}. 터미널을 정리했다." >&2
+    # 멈춘 이유는 hc get 의 status(state·kind·msg)에 있다. 정리하기 전에 읽어 둔다(예: kind=permission msg=trust this folder)
+    g=$("$hc_bin" get --json "$term" 2>/dev/null) || g=
+    g_field() { printf '%s' "$g" | jq -r ".status.$1 // empty" 2>/dev/null | tr '\n' ' ' | sed 's/ $//' || true; }
+    g_state=$(g_field state); g_kind=$(g_field kind); g_msg=$(g_field msg)
+    echo "새 세션이 준비되지 않았다($term $name): reason=${r_reason:-없음} status=${r_status:-없음} (hc get: status=${g_state:-없음} kind=${g_kind:-없음} msg=${g_msg:-없음}). 터미널을 정리했다." >&2
+    case "$g_msg" in *[Tt]rust*) echo "폴더 신뢰 확인 창에서 멈췄다. 그 폴더($PWD)에서 claude를 한 번 열어 신뢰를 승인한 뒤 다시 시도한다." >&2 ;; esac
     "$hc_bin" kill "$term" >/dev/null 2>&1 || true
     "$hc_bin" rm "$term" >/dev/null 2>&1 || true
     exit 1 ;;
