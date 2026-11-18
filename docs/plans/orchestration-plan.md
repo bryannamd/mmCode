@@ -524,7 +524,7 @@ U7 확인 항목:
 
 1. (2026-11-18 반영) 시간 상한에서 중단된 구간을 뺀다. `stop`이 `stopped_at`을 적고, 중단을 풀 때 `paused_sec`에 더한다.
 2. (2026-11-18 반영) `rotate.sh` 실패 문구에 `hc get`의 상태 사유를 넣는다. `eval-goal.sh check`가 auto 사전 조건 두 개를 본다: 폴더 신뢰(읽기만), 프로젝트 `.claude/settings.local.json`의 Bash 전체 허용(사용자 지시). Bash 허용은 시작할 때 사용자 확인 뒤 `prep`이 넣고 끝날 때 `unprep`이 넣은 것만 뺀다. 신뢰 승인은 사용자가 한다.
-3. (하지 않음) relay 문서에 "단계마다 새 일꾼을 띄운다"를 적는다(교훈 `~/.claude/lessons/named-teammate-sendmessage-no-reply.md`).
+3. (2026-11-18 반영) plan 3절에 "단계마다 새 일꾼을 띄우고 결과는 파일로 넘긴다"를 적었다. relay도 위임은 이 절을 따른다. 같은 완료 기준의 재위임은 같은 일꾼에게 이어 맡겨도 된다(2026-11-18 이 세션에서 그렇게 해서 동작했다). 교훈 `~/.claude/lessons/named-teammate-sendmessage-no-reply.md`.
 
 1·2번 검증: 시험 eval-goal 244·rotate 30·phase 42·status 9 통과. 독립 검수(opus) PASS. 교차 검토 codex 1회차 FAIL(필수 4건) → 2회차 FAIL(1건 해결, 3건 일부 남음, 새 1건), agy 1회차 PASS. 기록: 작업 폴더의 `docs/relay/review-prep/`를 `docs/review/2026-11-18-relay-prep/`로 옮겼다. 회차 상한에 닿아 사용자가 "기록하고 커밋"을 골랐다(2026-11-18).
 
