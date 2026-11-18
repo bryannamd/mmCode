@@ -349,10 +349,12 @@ public struct Terminal: Equatable, Sendable, Identifiable {
     public var location: String
     /// `hc get`의 상태 문구. 읽지 않았으면 nil.
     public var statusText: String?
+    /// 객관식 질문 화면에서 읽은 질문. blocked이고 `hc get`의 status.kind가 question일 때만 채운다.
+    public var question: ScreenQuestion?
 
     public var id: String { address }
 
-    public init(address: String, harness: Harness, agentRaw: String, cwd: String, state: String = "live", status: AgentStatus = .unknown, turn: Int = 0, location: String = "", statusText: String? = nil) {
+    public init(address: String, harness: Harness, agentRaw: String, cwd: String, state: String = "live", status: AgentStatus = .unknown, turn: Int = 0, location: String = "", statusText: String? = nil, question: ScreenQuestion? = nil) {
         self.address = address
         self.harness = harness
         self.agentRaw = agentRaw
@@ -362,6 +364,7 @@ public struct Terminal: Equatable, Sendable, Identifiable {
         self.turn = turn
         self.location = location
         self.statusText = statusText
+        self.question = question
     }
 
     /// 탭 이름. `location`의 " / " 뒤쪽.

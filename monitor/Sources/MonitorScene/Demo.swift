@@ -9,7 +9,7 @@ public extension Project {
 }
 
 public enum Demo: String, CaseIterable, Sendable {
-    case quiet, decision, blocked, stopped, building, otherFloorAlert
+    case quiet, decision, blocked, stopped, building, otherFloorAlert, question
 
     public static let rootPrefix = "demo:"
 
@@ -23,6 +23,7 @@ public enum Demo: String, CaseIterable, Sendable {
         case .decision, .building: mm = Demo.mmCode(.decision)
         case .blocked: mm = Demo.mmCode(.blocked)
         case .stopped: mm = Demo.mmCode(.stopped)
+        case .question: mm = Demo.mmCode(.question)
         }
         return World(projects: [mm, Demo.web, Demo.mobile(trouble: self == .otherFloorAlert), Demo.docs])
     }
@@ -49,6 +50,25 @@ public enum Demo: String, CaseIterable, Sendable {
         (1...n).map { UnitState(id: "U\($0)", phase: $0 <= done ? .done : .queued, updated: at(Double($0))) }
     }
 
+    /// 객관식 질문 화면(`hc read --lines 0`)의 예시. 꼴은 실제 화면을 본떴다.
+    static let questionScreen = """
+     ☐ 시험
+
+    시험 3개가 실패했습니다. 어떻게 할까요?
+
+    ❯ 1. 다시 실행
+         같은 명령을 다시 실행합니다.
+      2. 건너뛰기
+         다음 단위로 갑니다.
+      3. 멈추기
+         여기서 멈춥니다.
+      4. Type something.
+    ────────────────────────────────
+      5. Chat about this
+
+    Enter to select · ↑/↓ to navigate · Esc to cancel
+    """
+
     private static func mmCode(_ s: Demo) -> Project {
         let main = Actor(terminal: "t1", harness: .claudeCode, model: "claude-fable-5-2", effort: "high")
         let worker = Actor(terminal: "t2", harness: .claudeCode, model: "claude-sonnet-5-5", effort: "low")
@@ -73,6 +93,10 @@ public enum Demo: String, CaseIterable, Sendable {
             terms.remove(at: 1); terms[0].status = .idle; terms[0].statusText = "정본을 옮길지 묻는 중"
             plan.units = [u1, u2, u3Done] + rest
             plan.decisions = [Decision(id: "D1", question: "정본을 이벤트 파일로 옮길까요?", recommendation: "옮긴다", options: ["옮긴다", "그대로 둔다"], blocks: ["U4", "U5"], asker: main, ts: at(95))]
+        case .question:
+            terms[1].status = .blocked; terms[1].statusText = "answer: 시험 3개가 실패했습니다. 어떻게 할까요?"
+            terms[1].question = QuestionScreen.parse(questionScreen)
+            plan.units = [u1, u2, u("U3", "모니터 조회판", .build, owner: worker)] + rest
         case .stopped:
             terms.remove(at: 1); terms[0].status = .idle; terms[0].statusText = nil
             plan.units = [u1, u2, u3Done] + rest

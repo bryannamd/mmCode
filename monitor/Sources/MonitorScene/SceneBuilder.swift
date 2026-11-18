@@ -266,6 +266,12 @@ public enum SceneBuilder {
                                detail: h.map { "환경·한도. \($0.reason). \(resumeHint(p, $0))" } ?? (t?.statusText ?? "환경·한도"), buttons: [])
         case .input(let t):
             let n = name(t)
+            if let q = t.question {
+                let b = choiceButtons(terminal: t.address, q)
+                let more = b.count < q.options.count ? ". 나머지 선택지는 터미널에서 고르세요" : ""
+                return GroundModel(turn: true, floor: pi, icon: face(all, t.address) ?? .bell, title: q.text,
+                                   detail: "\(n)\(josa(n, "이", "가")) 답을 기다립니다" + more, buttons: b)
+            }
             return GroundModel(turn: true, floor: pi, icon: face(all, t.address) ?? .bell, title: "\(n)\(josa(n, "이", "가")) 터미널에서 입력을 기다립니다",
                                detail: t.statusText ?? t.location, buttons: [])
         case .userStop(let h):
@@ -321,18 +327,25 @@ public enum SceneBuilder {
         return kept.isEmpty ? [GroundButton(reply.label, reply.action, primary: true)] : kept.map(pick) + [reply]
     }
 
-    /// 지반 버튼 줄의 폭 한도. 지반 480px에서 오른쪽 여백 10, 얼굴 칸과 글 시작(56), 글 칸 최소 150을 뺀 값이다.
-    /// 버튼 하나는 Jua 14 글자 폭 + 28(최소 40)이고 버튼 사이는 8px이다(Parts.swift GroundView).
-    static let buttonRowMax: Double = 480 - 10 - 56 - 150 - 10 + 8
+    /// 객관식 질문의 선택지 버튼. 지반에 다 들어가지 않는 선택지는 뒤에서부터 뺀다(answerButtons와 같은 한도).
+    public static func choiceButtons(terminal: String, _ q: ScreenQuestion) -> [GroundButton] {
+        var kept = q.options
+        while !kept.isEmpty, !fits(kept.map(\.label)) { kept.removeLast() }
+        return kept.map { GroundButton($0.label, .choose(terminal: terminal, number: $0.number)) }
+    }
+
+    /// 지반 버튼 줄의 폭 한도(pt). 지반 240에서 글 시작(40), 오른쪽 여백 6, 닫기 버튼 자리(24 + 간격 6)를 뺀 값이다.
+    /// 버튼 하나는 Jua 12 글자 폭 + 20(최소 32)이고 버튼 사이는 6이다(Parts.swift GroundView). 합에 간격 하나가 더 붙어 6을 더한다.
+    static let buttonRowMax: Double = 240 - 40 - 6 - 30 + 6
 
     static func fits(_ labels: [String]) -> Bool {
-        labels.reduce(0) { $0 + buttonWidth($1) + 8 } <= buttonRowMax
+        labels.reduce(0) { $0 + buttonWidth($1) + 6 } <= buttonRowMax
     }
 
     static func buttonWidth(_ s: String) -> Double {
-        let font = CTFontCreateWithName(Fonts.jua as CFString, 14, nil)
+        let font = CTFontCreateWithName(Fonts.jua as CFString, 12, nil)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: s, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
-        return max(40, ceil(CTLineGetTypographicBounds(line, nil, nil, nil)) + 28)
+        return max(32, ceil(CTLineGetTypographicBounds(line, nil, nil, nil)) + 20)
     }
 
     private static let NUM = ["", "하나", "둘", "셋", "넷", "다섯"]

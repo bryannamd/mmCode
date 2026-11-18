@@ -2,18 +2,21 @@ import AppKit
 import MonitorCore
 import MonitorScene
 
-/// 480×300 패널. 화면 상태(보기, 선택, 보이는 층)를 들고 SceneBuilder의 값을 세 층에 나눠 준다.
-/// 답과 지시는 PhaseClient(phase.sh answer·direct)로만 보낸다. 예시 자료면 보내지 않는다.
+/// 240×180pt 패널. 화면 상태(보기, 선택, 보이는 층)를 들고 SceneBuilder의 값을 세 층에 나눠 준다.
+/// 결정 답과 지시는 PhaseClient(phase.sh answer·direct)로 보낸다. 메시지와 객관식 답은 HcClient.write(send·keys)로 터미널에 직접 보낸다.
+/// 예시 자료와 화면 찍기에서는 무엇도 보내지 않는다.
 final class PanelView: NSView {
     enum Mode { case office, building, list }
     /// 지반의 입력칸. 다르게 답하기와 메시지.
     enum Form: Equatable { case reply(decision: String, question: String), message(terminal: String, name: String) }
 
-    // 지붕은 28px만 칠한다. 아래 12px은 투명하고 버튼의 클릭 영역(40px)만 장면 위로 내려온다.
-    let roof = RoofView(frame: CGRect(x: 0, y: 0, width: 480, height: RoofView.hitHeight))
-    let scene = SceneView(frame: CGRect(x: 0, y: 28, width: 480, height: 216))
-    let list = ListPane(frame: CGRect(x: 0, y: 28, width: 480, height: 216))
-    let ground = GroundView(frame: CGRect(x: 0, y: 244, width: 480, height: 56))
+    /// 2026-11-17 사용자 요청: 폭 240pt, 글자 10pt 이상. 장면 그림만 0.5배이고 지붕과 지반은 화면 pt로 그린다.
+    static let size = CGSize(width: 240, height: RoofView.height + 108 + 50)
+    // 지붕은 22pt만 칠한다. 아래 4pt는 투명하고 버튼의 클릭 영역(26pt)만 장면 위로 내려온다.
+    let roof = RoofView(frame: CGRect(x: 0, y: 0, width: 240, height: RoofView.hitHeight))
+    let scene = SceneView(frame: CGRect(x: 0, y: RoofView.height, width: 240, height: 108))
+    let list = ListPane(frame: CGRect(x: 0, y: RoofView.height, width: 240, height: 108))
+    let ground = GroundView(frame: CGRect(x: 0, y: RoofView.height + 108, width: 240, height: 50))
 
     var world = World()
     var demo = false, hcMissing = false, hcDown = false, loaded = false
@@ -48,7 +51,6 @@ final class PanelView: NSView {
         list.isHidden = true
         roof.building.onPress = { [unowned self] in go(mode == .building ? .office : .building) }
         roof.list.onPress = { [unowned self] in go(mode == .list ? back : .list) }
-        roof.alert.onPress = { [unowned self] in go(.building) }
         scene.overlay.onEmptyClick = { [unowned self] in if selection != nil || notice != nil { selection = nil; notice = nil; form = nil; confirmStop = nil; reload() } }
         scene.onScroll = { [unowned self] d in scrollFloors(d) }
         setAccessibilityLabel("mmCode 모니터 패널")
@@ -163,8 +165,10 @@ final class PanelView: NSView {
         for h in office?.scene.hits ?? building!.scene.hits {
             let b = HitButton(h.kind, label: h.label)
             let v = CGRect(x: h.rect.minX * 2, y: h.rect.minY * 2, width: h.rect.width * 2, height: h.rect.height * 2)
-            // 클릭 영역을 넓힌다. 선반의 상자는 옆으로 붙어 있어 위아래만, 층은 위아래 2px만.
-            let (dx, dy): (CGFloat, CGFloat) = switch h.kind { case .actor: (4, 4); case .box: (0, 4); case .floor: (0, 2) }
+            // 클릭 영역을 넓힌다. 선반의 상자는 옆으로 붙어 있어 위아래만 넓힌다. 높이는 화면 24pt(장면 좌표 48) 이상.
+            // 선반 두 단은 화면 16pt 간격이라 넓힌 영역이 겹친다. 겹친 곳은 나중에 놓인 상자가 받는다.
+            let dx: CGFloat = if case .actor = h.kind { 4 } else { 0 }
+            let dy = max(4, (48 - v.height) / 2)
             b.frame = v.insetBy(dx: -dx, dy: -dy); b.visual = CGRect(x: dx, y: dy, width: v.width, height: v.height)
             b.on = h.kind == selection
             b.onPress = { [unowned self] in
@@ -178,12 +182,12 @@ final class PanelView: NSView {
         if let o = office, case .actor(let id)? = selection, let a = o.scene.actors.first(where: { $0.id == id }) {
             let p = a.spot.point
             let x = CGFloat(p.x * 2), feet = CGFloat(p.y * 2)
-            // 이름표는 발 아래에 둔다. 바닥에 가까운 자리는 아래가 모자라서 몸을 가린다. 그래서 옆에 둔다: 벨 자리는 왼쪽, 소파는 소파의 오른쪽(96px).
-            let half = (Line(a.name, Theme.jua(12), Theme.ink).width + 16) / 2
+            // 이름표는 발 아래에 둔다. 바닥에 가까운 자리는 아래가 모자라서 몸을 가린다. 그래서 옆에 둔다: 벨 자리는 왼쪽, 소파는 소파의 오른쪽(96).
+            let half = SceneOverlay.signWidth(a.name) / 2, h = SceneOverlay.signH
             var tag: (x: CGFloat, y: CGFloat)
-            if feet + 4 + 20 <= 216 - 2 { tag = (x, feet + 4) }
-            else if a.spot == .bell { tag = (x - 12 - 8 - half, feet - 16 - 10) }
-            else { tag = (96 + 4 + half, feet - 16 - 10) }
+            if feet + 2 + h <= 216 - 2 { tag = (x, feet + 2) }
+            else if a.spot == .bell { tag = (x - 12 - 8 - half, feet - 16 - h / 2) }
+            else { tag = (96 + 4 + half, feet - 16 - h / 2) }
             // 긴 이름도 장면 밖으로 나가지 않게 한다.
             tag.x = max(half + 4, min(480 - half - 4, tag.x))
             ov.nameTag = (a.name, tag.x, tag.y)
@@ -199,6 +203,8 @@ final class PanelView: NSView {
         bubbleTimer?.invalidate(); bubbleTimer = nil
         guard let o = office, mode == .office else { return nil }
         noteSaid()
+        // 고른 것이 있으면 말풍선을 띄우지 않는다. 글자를 키운 말풍선이 고른 상자나 이름표를 가린다.
+        guard selection == nil else { return nil }
         let now = Date()
         let live = o.scene.bubbles.enumerated().compactMap { i, b -> (MonitorScene.Bubble, Date, Int)? in
             guard let s = said[b.actorID], s.text == b.text, now.timeIntervalSince(s.at) < 3.2 else { return nil }
@@ -210,8 +216,9 @@ final class PanelView: NSView {
             self.scene.overlay.bubble = self.bubble(); self.scene.overlay.needsDisplay = true
         }
         let W = 240.0
-        let wpx = min(Line(sp.text, Theme.jua(12), .black).width + 18, 480 * 0.62)
-        let w = wpx / 2, h = 10.0, cx = sp.anchor.x, y0 = max(h + 5, sp.anchor.y)
+        // 장면 좌표(480)로 잰다. 글자는 화면 10pt, 말풍선 높이는 화면 14pt.
+        let wpx = min(Line(sp.text, SceneOverlay.font, .black).width + 16, 480 * 0.7)
+        let w = wpx / 2, h = Double(SceneOverlay.signH) / 2, cx = sp.anchor.x, y0 = max(h + 5, sp.anchor.y)
         func fit(_ x: Double) -> Double { min(W - w / 2 - 4, max(w / 2 + 4, x)) }
         func over(_ v: (Double, Double), _ x0: Double, _ x1: Double, _ y0: Double, _ y1: Double) -> Bool {
             x0 < v.0 + w / 2 && x1 > v.0 - w / 2 && y0 < v.1 && y1 > v.1 - h
@@ -230,7 +237,7 @@ final class PanelView: NSView {
         let cands = xs.map { ($0, y0) } + xs.map { ($0, max(h + 5, y0 - 10)) }
         let best = cands.dropFirst().reduce(cands[0]) { cost($1) < cost($0) ? $1 : $0 }
         let tx = max(8 - wpx / 2, min(wpx / 2 - 8, (cx - best.0) * 2))
-        let rect = CGRect(x: best.0 * 2 - wpx / 2, y: best.1 * 2 - 20, width: wpx, height: 20)
+        let rect = CGRect(x: best.0 * 2 - wpx / 2, y: best.1 * 2 - SceneOverlay.signH, width: wpx, height: SceneOverlay.signH)
         return .init(text: sp.text, rect: rect, tailX: rect.midX + tx)
     }
 
@@ -268,7 +275,7 @@ final class PanelView: NSView {
         for b in g.buttons {
             if case .enterFloor(let i) = b.action {
                 spec.buttons.append(.init(label: b.label, aria: "\(b.label): \(world.projects.indices.contains(i) ? world.projects[i].name : "")", primary: b.primary, disabled: b.disabled) { [unowned self] in enter(i) })
-            } else if let root, canSend, !isPlaceholder(b.action) {
+            } else if let root, canSend || Self.viaHc(b.action), !isPlaceholder(b.action) {
                 spec.buttons.append(.init(label: b.label, aria: aria(b), primary: b.primary, disabled: b.disabled || sending || sent.contains(Self.key(b.action))) { [unowned self] in act(b.action, root: root) })
             } else {
                 held.append(b.action)
@@ -292,11 +299,17 @@ final class PanelView: NSView {
         switch a {
         case .answer(let d, _), .reply(let d): return "d:" + d
         case .message(let t): return "m:" + t
+        case .choose(let t, _): return "c:" + t
         case .stopAfter: return "stop-after"
         case .interrupt: return "interrupt"
         case .resume: return "resume"
         case .enterFloor(let i): return "floor:\(i)"
         }
+    }
+
+    /// phase.sh 없이 hc로 보내는 동작.
+    static func viaHc(_ a: GroundAction) -> Bool {
+        switch a { case .message, .choose: return true; default: return false }
     }
 
     /// 기록에 없는 결정(멈춤만 있는 것)은 ID가 없어 답을 보낼 수 없다.
@@ -308,6 +321,7 @@ final class PanelView: NSView {
         switch b.action {
         case .answer(_, let t): return "\(t)로 답하기"
         case .interrupt: return "즉시 중단"
+        case .choose(_, let n): return "\(n)번 \(b.label) 고르기"
         case .resume: return "계속 진행하라고 지시"
         default: return b.label
         }
@@ -341,16 +355,61 @@ final class PanelView: NSView {
         case .answer(let d, let text): send(root, Self.key(a)) { PhaseClient.answer(phase: $0, root: root, decision: d, text: text) }
         case .stopAfter: send(root, Self.key(a)) { PhaseClient.direct(phase: $0, root: root, .stopAfter) }
         case .resume: send(root, Self.key(a)) { PhaseClient.direct(phase: $0, root: root, .resume) }
+        case .choose(let t, let n): choose(root, terminal: t, number: n)
         case .enterFloor(let i): enter(i)
+        }
+    }
+
+    /// 보내기 전 공통 검사. 보내면 안 되면 안내를 적고 false.
+    private func mayDeliver(_ key: String) -> Bool {
+        guard !sending, !sent.contains(key) else { return false }
+        if demo { form = nil; confirmStop = nil; notice = Self.demoNotice; reload(); return false }
+        if noSend { form = nil; confirmStop = nil; notice = "화면 찍기에서는 보내지 않습니다"; reload(); return false }
+        return true
+    }
+
+    private func terminalName(_ root: String, _ t: String) -> String {
+        world.projects.first { $0.root == root }?.terminals.first { $0.address == t }.map(SceneBuilder.name) ?? t
+    }
+
+    /// 메시지를 `hc send`로 터미널에 붙여 넣고 Enter를 누른다. `--force`를 쓰지 않으므로 질문 창에는 답하지 않는다.
+    /// hc는 사용자의 미완성 입력을 최대 60초 기다린다. 그래서 70초까지 기다린다.
+    private func message(_ root: String, terminal t: String, text: String) {
+        let n = terminalName(root, t)
+        deliver("m:" + t) { HcClient.write("send", address: t, text, timeout: 70).map { ("보내지 못했습니다: \($0)", false) } ?? ("\(n)에게 보냈습니다", true) }
+    }
+
+    /// 객관식 선택지를 고른다. 화면을 다시 읽어 같은 질문·같은 선택지일 때만 숫자 키를 누른다.
+    private func choose(_ root: String, terminal t: String, number: Int) {
+        guard let q = world.projects.first(where: { $0.root == root })?.terminals.first(where: { $0.address == t })?.question,
+              let o = q.options.first(where: { $0.number == number }) else { return }
+        deliver("c:" + t) {
+            guard let screen = try? HcClient.read(address: t, lines: 0), QuestionScreen.parse(screen) == q else { return ("질문이 바뀌었습니다. 다시 보세요", false) }
+            return HcClient.write("keys", address: t, String(number), timeout: 5).map { ("보내지 못했습니다: \($0)", false) } ?? ("골랐습니다: \(o.label)", true)
+        }
+    }
+
+    /// hc 쓰기를 백그라운드에서 실행하고 결과 글을 지반에 적는다. 보낸 뒤 5초 또는 다음 갱신까지 같은 버튼을 막는다.
+    private func deliver(_ key: String, _ op: @escaping () -> (text: String, ok: Bool)) {
+        guard mayDeliver(key) else { return }
+        sending = true; notice = "보내는 중입니다"; reload()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let r = op()
+            DispatchQueue.main.async { [self] in
+                sending = false; form = nil; notice = r.text
+                if r.ok {
+                    sent.insert(key)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [self] in sent.remove(key); reload() }
+                }
+                reload()
+            }
         }
     }
 
     /// 큐에서 phase.sh를 부르고 끝나면 지반의 작은 글에 결과를 적는다. 보내는 동안은 다시 보내지 않는다.
     /// 기록 파일이 바뀌면 감시자가 화면을 다시 읽는다.
     private func send(_ root: String, _ key: String, _ op: @escaping (String) -> PhaseClient.Outcome) {
-        guard !sending, !sent.contains(key) else { return }
-        if demo { form = nil; confirmStop = nil; notice = Self.demoNotice; reload(); return }
-        if noSend { form = nil; confirmStop = nil; notice = "화면 찍기에서는 보내지 않습니다"; reload(); return }
+        guard mayDeliver(key) else { return }
         guard let phase = phasePath(root) else { form = nil; confirmStop = nil; notice = Self.noPhase; reload(); return }
         sending = true; notice = "보내는 중입니다"; reload()
         // 패널은 앱이 끝날 때까지 산다. 그래서 self를 강하게 잡는다.
@@ -394,7 +453,7 @@ final class PanelView: NSView {
             submit = { [unowned self] t in send(root, "d:" + d) { PhaseClient.answer(phase: $0, root: root, decision: d, text: t) } }
         case .message(let t, let n):
             (label, placeholder, id) = ("\(n)에게 보낼 메시지", "예: 시험부터 다시 실행해 줘", "message:\(root):\(t)")
-            submit = { [unowned self] text in send(root, "m:" + t) { PhaseClient.direct(phase: $0, root: root, .message, text: text, terminal: t) } }
+            submit = { [unowned self] text in message(root, terminal: t, text: text) }
         }
         // 빈 글은 보내지 않는다.
         let go: (String) -> Void = { t in let v = t.trimmingCharacters(in: .whitespacesAndNewlines); if !v.isEmpty { submit(v) } }
@@ -416,15 +475,20 @@ final class PanelView: NSView {
         case .actor(let id):
             guard let a = o.scene.actors.first(where: { $0.id == id }) else { return nil }
             let pill = [a.harness.rawValue, a.model, a.effort.map { "effort " + $0 }].compactMap { $0 }.joined(separator: ", ")
-            var detail = a.stateText + (a.statusText.map { ". " + $0 } ?? "")
-            var btns = [close]
+            let detail = a.stateText + (a.statusText.map { ". " + $0 } ?? "")
             let root = world.projects[officeIndex!].root
-            if demo || phasePath(root) != nil {
-                btns.insert(.init(label: "메시지", aria: "\(a.name)에게 메시지", primary: true, disabled: sending || sent.contains("m:" + a.id)) { [unowned self] in
-                    form = (root, .message(terminal: a.id, name: a.name)); notice = nil; reload()
-                }, at: 0)
-            } else { detail += ". " + Self.noPhase }
-            return GroundSpec(turn: false, icon: .face(a.coat, a.pose), title: a.name, pill: pill, detail: detail, buttons: btns)
+            // 객관식 질문이 떠 있으면 질문과 선택지를 보인다. 메시지(hc send)는 질문 창에 들어가지 않으므로 두지 않는다.
+            if a.status == .blocked, let q = world.projects[officeIndex!].terminals.first(where: { $0.address == id })?.question {
+                let choices = SceneBuilder.choiceButtons(terminal: id, q).map { b in
+                    GroundSpec.Button(label: b.label, aria: aria(b), disabled: sending || sent.contains(Self.key(b.action))) { [unowned self] in act(b.action, root: root) }
+                }
+                let more = choices.count < q.options.count ? ". 나머지 선택지는 터미널에서 고르세요" : ""
+                return GroundSpec(turn: true, icon: .face(a.coat, a.pose), title: q.text, detail: "\(a.name): 입력 대기" + more, buttons: choices + [close])
+            }
+            let msg = GroundSpec.Button(label: "메시지", aria: "\(a.name)에게 메시지", primary: true, disabled: sending || sent.contains("m:" + a.id)) { [unowned self] in
+                form = (root, .message(terminal: a.id, name: a.name)); notice = nil; reload()
+            }
+            return GroundSpec(turn: false, icon: .face(a.coat, a.pose), title: a.name, pill: pill, detail: detail, buttons: [msg, close])
         case .box(let id):
             guard let b = o.scene.boxes.first(where: { $0.id == id }), let i = officeIndex else { return nil }
             let u = world.projects[i].activePlan?.units.first { $0.id == id }

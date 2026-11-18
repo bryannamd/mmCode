@@ -65,7 +65,9 @@ func snapshot(_ args: Args, to path: String) {
     let store = Store(demo: args.demo, saveFloors: false)
     let here = ProjectGrouping.gitRoot(from: FileManager.default.currentDirectoryPath)
     store.loadOnce(focus: args.view == "office" || args.view == "list" ? here : nil)
-    let p = PanelView(frame: CGRect(x: 0, y: 0, width: 480, height: 300))
+    // 실제 창과 같은 크기를 레티나 2배 픽셀로 찍는다.
+    let W = Int(PanelView.size.width * 2), H = Int(PanelView.size.height * 2)
+    let p = PanelView(frame: CGRect(origin: .zero, size: PanelView.size))
     p.noSend = true  // 화면 찍기는 무엇도 보내지 않는다
     p.appearance = NSAppearance(named: .aqua)
     configure(p, args, store)
@@ -83,14 +85,14 @@ func snapshot(_ args: Args, to path: String) {
     // 입력칸이나 중단 확인 같은 지반 상태를 찍는다. 예시 자료면 보내지 않는다.
     if let b = args.press { p.ground.press(b) }
     p.layoutSubtreeIfNeeded()
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 960, pixelsHigh: 600, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: W, pixelsHigh: H, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     rep.size = p.bounds.size
     p.cacheDisplay(in: p.bounds, to: rep)
-    // 패널의 둥근 모서리(10px)를 남기고 바깥을 비운다.
-    let ctx = CGContext(data: nil, width: 960, height: 600, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: 960, height: 600), cornerWidth: 20, cornerHeight: 20, transform: nil)); ctx.clip()
-    ctx.draw(rep.cgImage!, in: CGRect(x: 0, y: 0, width: 960, height: 600))
+    // 패널의 둥근 모서리를 남기고 바깥을 비운다.
+    let ctx = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: W, height: H), cornerWidth: AppController.radius * 2, cornerHeight: AppController.radius * 2, transform: nil)); ctx.clip()
+    ctx.draw(rep.cgImage!, in: CGRect(x: 0, y: 0, width: W, height: H))
     let out = NSBitmapImageRep(cgImage: ctx.makeImage()!)
     do { try out.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path)); print(path) }
     catch { Args.fail("저장 실패: \(error)") }

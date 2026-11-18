@@ -252,7 +252,8 @@ private func decisionGround(_ d: Decision, halt: Halt? = nil, others: [Decision]
     let fit = decisionGround(Decision(id: "D1", question: "Q", recommendation: "아니오", options: ["예", "아니오"], ts: t0)).buttons
     #expect(fit == [GroundButton("예", .answer(decision: "D1", text: "예")), GroundButton("아니오", .answer(decision: "D1", text: "아니오"), primary: true)])
     // 다 들어가지 않으면 앞의 것만 두고 나머지는 "다르게 답하기"로 넣는다.
-    let long = ["첫째 선택지입니다", "둘째 선택지입니다", "셋째 선택지입니다"]
+    // 지반 폭 240pt의 버튼 줄(170pt)에는 이 셋이 다 들어가지 않는다.
+    let long = ["첫째 안", "둘째 안", "셋째 안"]
     let some = decisionGround(Decision(id: "D1", question: "Q", recommendation: long[0], options: long, ts: t0)).buttons
     #expect(some.map(\.label) == [long[0], "다르게 답하기"] && some[0].primary && some[1].action == .reply(decision: "D1"))
     #expect(SceneBuilder.fits(some.map(\.label)) && !SceneBuilder.fits(long))
@@ -315,4 +316,12 @@ private func decisionGround(_ d: Decision, halt: Halt? = nil, others: [Decision]
     #expect(linked.buttons.map(\.label) == ["계속"])
     let env = ground(PlanState(plan: "p", halts: [Halt(reason: "limit:iterations", unit: nil, ts: t0)], updated: t0))
     #expect(env.buttons.isEmpty && env.detail.hasSuffix("터미널 a에서 계속하세요"))
+}
+
+@Test func questionDemoShowsChoices() {
+    let v = SceneBuilder.office(Demo.question.world, project: 0, night: false)
+    #expect(v.ground.title == "시험 3개가 실패했습니다. 어떻게 할까요?")
+    // 버튼 줄에 둘만 들어간다. 셋째는 터미널에서 고르라고 적는다.
+    #expect(v.ground.buttons == [GroundButton("다시 실행", .choose(terminal: "t2", number: 1)), GroundButton("건너뛰기", .choose(terminal: "t2", number: 2))])
+    #expect(v.ground.detail.hasSuffix("나머지 선택지는 터미널에서 고르세요"))
 }

@@ -94,7 +94,8 @@ public enum SceneRenderer {
         c.R(191, 62, 2, 10, P.ink); c.R(202, 62, 2, 10, P.ink); c.B(189, 59, 16, 4, P.wood, P.ink)
         // 화분
         c.B(223, 94, 9, 9, P.pot, P.ink); c.R(225, 86, 5, 8, P.leaf); c.R(222, 89, 4, 4, P.leaf); c.R(229, 88, 4, 5, P.leaf2); c.R(227, 83, 2, 4, P.leaf2)
-        for b in st.boxes { let p = b.place.point; c.box(P, p.x, p.y, number: b.number, done: b.phase == .done) }
+        // 상자 번호는 그리지 않는다. 패널을 0.5배로 보이면 숫자가 화면 5pt라 읽히지 않는다. 번호는 상자를 고르면 지반 제목에 나온다.
+        for b in st.boxes { let p = b.place.point; c.box(P, p.x, p.y, number: nil, done: b.phase == .done) }
         if st.stopSign { c.R(28, 62, 1, 10, P.ink); c.B(25, 55, 7, 7, P.red, P.ink); c.R(26, 58, 5, 1, P.white) }
         // 앞뒤 순서: 발 y가 작은 것부터. 같으면 넣은 순서(시안의 안정 정렬).
         enum Item { case actor(SceneActor), sofa, bell }

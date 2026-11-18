@@ -3,13 +3,15 @@ import AppKit
 /// 패널의 모든 버튼. 마우스, 키보드(스페이스·리턴), 화면 낭독기로 누를 수 있다.
 /// 초점 테두리는 버튼 밖에 그려야 해서 부모(FocusHost)가 그린다.
 class PanelButton: NSView {
-    enum Style { case nav, pill, primary, outline, close, hit }
+    enum Style { case nav, primary, outline, close, hit }
 
     var style: Style
     var title: String
     /// 지반이 분홍일 때 색을 뒤집는다.
     var turn = false
     var on = false { didSet { needsDisplay = true } }
+    /// 지붕 버튼을 분홍으로 칠한다. 다른 층에 나설 일이 있다는 표시다.
+    var alarm = false { didSet { needsDisplay = true } }
     var disabled = false
     /// 지반에 초점이 있을 때 먼저 받는다.
     var focus = false
@@ -65,10 +67,9 @@ class PanelButton: NSView {
     /// 글자 폭에 맞춘 보이는 크기.
     var fitSize: CGSize {
         switch style {
-        case .nav: return CGSize(width: max(40, Line(title, Theme.jua(13), .black).width + 16), height: 20)
-        case .pill: return CGSize(width: Line(title, Theme.body(11, .semibold), .black).width + 16, height: 19)
-        case .primary, .outline: return CGSize(width: max(40, Line(title, Theme.jua(14), .black).width + 28), height: 32)
-        case .close: return CGSize(width: 32, height: 32)
+        case .nav: return CGSize(width: Line(title, Theme.jua(11), .black).width + 12, height: 18)
+        case .primary, .outline: return CGSize(width: max(32, Line(title, Theme.jua(12), .black).width + 20), height: 24)
+        case .close: return CGSize(width: 24, height: 24)
         case .hit: return visual.size
         }
     }
@@ -79,24 +80,21 @@ class PanelButton: NSView {
         let alpha: CGFloat = disabled ? 0.5 : 1
         switch style {
         case .nav:
-            fillRound(r, 5, on ? Theme.paper : hover ? Theme.ink3 : Theme.ink2)
-            Line(title, Theme.jua(13), on ? Theme.ink : Theme.paper).draw(x: r.minX + 8, cy: r.minY + 4 + 6.5)
-        case .pill:
-            fillRound(r, 9, Theme.pink)
-            Line(title, Theme.body(11, .semibold), Theme.ink).draw(x: r.minX + 8, cy: r.midY)
+            fillRound(r, 5, on ? Theme.paper : alarm ? Theme.pink : hover ? Theme.ink3 : Theme.ink2)
+            Line(title, Theme.jua(11), on || alarm ? Theme.ink : Theme.paper).draw(x: r.minX + 6, cy: r.midY)
         case .primary:
-            fillRound(r, 8, fg.withAlphaComponent(alpha), stroke: fg.withAlphaComponent(alpha))
-            Line(title, Theme.jua(14), bg.withAlphaComponent(alpha)).draw(x: r.minX + 14, cy: r.minY + 16.5)
+            fillRound(r, 7, fg.withAlphaComponent(alpha), stroke: fg.withAlphaComponent(alpha))
+            Line(title, Theme.jua(12), bg.withAlphaComponent(alpha)).draw(x: r.minX + 10, cy: r.midY, maxWidth: r.width - 20)
         case .outline:
             let h = turn ? Theme.ink.withAlphaComponent(0.14) : Theme.paper.withAlphaComponent(0.16)
-            fillRound(r, 8, hover && !disabled ? h : nil, stroke: fg.withAlphaComponent(alpha))
-            Line(title, Theme.jua(14), fg.withAlphaComponent(alpha)).draw(x: r.minX + 14, cy: r.minY + 16.5)
+            fillRound(r, 7, hover && !disabled ? h : nil, stroke: fg.withAlphaComponent(alpha))
+            Line(title, Theme.jua(12), fg.withAlphaComponent(alpha)).draw(x: r.minX + 10, cy: r.midY, maxWidth: r.width - 20)
         case .close:
-            if hover { fillRound(r, 8, turn ? Theme.ink.withAlphaComponent(0.14) : Theme.paper.withAlphaComponent(0.16)) }
-            let p = NSBezierPath(), o = CGPoint(x: r.midX - 6, y: r.midY - 6)
-            p.move(to: CGPoint(x: o.x + 2, y: o.y + 2)); p.line(to: CGPoint(x: o.x + 10, y: o.y + 10))
-            p.move(to: CGPoint(x: o.x + 10, y: o.y + 2)); p.line(to: CGPoint(x: o.x + 2, y: o.y + 10))
-            p.lineWidth = 2.4; p.lineCapStyle = .round; fg.setStroke(); p.stroke()
+            if hover { fillRound(r, 7, turn ? Theme.ink.withAlphaComponent(0.14) : Theme.paper.withAlphaComponent(0.16)) }
+            let p = NSBezierPath(), o = CGPoint(x: r.midX - 4, y: r.midY - 4)
+            p.move(to: CGPoint(x: o.x, y: o.y)); p.line(to: CGPoint(x: o.x + 8, y: o.y + 8))
+            p.move(to: CGPoint(x: o.x + 8, y: o.y)); p.line(to: CGPoint(x: o.x, y: o.y + 8))
+            p.lineWidth = 2; p.lineCapStyle = .round; fg.setStroke(); p.stroke()
         case .hit:
             if hover { fillRound(r, 6, Theme.paper.withAlphaComponent(0.28)) }
             if on {

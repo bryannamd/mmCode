@@ -98,7 +98,12 @@ final class Store {
         // 상태 문구(hc get)는 지금 사무실로 보는 프로젝트의 에이전트만 읽는다.
         if let f = focusRoot, let i = ordered.firstIndex(where: { $0.root == f }) {
             for k in ordered[i].terminals.indices where ordered[i].terminals[k].harness.isAgent {
-                ordered[i].terminals[k].statusText = HcClient.statusText(of: ordered[i].terminals[k].address)
+                let t = ordered[i].terminals[k], s = HcClient.status(of: t.address)
+                ordered[i].terminals[k].statusText = s.text
+                // 객관식 질문이 떠 있으면 화면을 읽어 질문과 선택지를 뽑는다. blocked인 터미널만 화면을 읽는다.
+                if t.status == .blocked, s.kind == "question", let screen = try? HcClient.read(address: t.address, lines: 0) {
+                    ordered[i].terminals[k].question = QuestionScreen.parse(screen)
+                }
             }
         }
         // 화면 밖 캡처(sync)는 한 번 읽고 끝나므로 지켜보지 않는다.

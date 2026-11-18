@@ -72,6 +72,24 @@ private let lsJSON = """
     #expect(throws: HcClient.HcError.forbidden("-x")) { try HcClient.read(address: "-x") }
 }
 
+@Test func writeArgsBoundary() throws {
+    // 사용자 글은 `--` 뒤 한 칸이다. 셸을 거치지 않는다.
+    #expect(try HcClient.writeArgs("send", address: "t1", "a b; rm -rf ~ --force") == ["send", "t1", "--", "a b; rm -rf ~ --force"])
+    #expect(try HcClient.writeArgs("keys", address: "t1", "2") == ["keys", "t1", "2"])
+    #expect(throws: HcClient.HcError.forbidden("-t1")) { try HcClient.writeArgs("send", address: "-t1", "hi") }
+    for k in ["0", "10", "a", "enter", ""] {
+        #expect(throws: HcClient.HcError.forbidden(k)) { try HcClient.writeArgs("keys", address: "t1", k) }
+    }
+    for verb in ["kill", "rm", "run", "ls"] {
+        #expect(throws: HcClient.HcError.forbidden(verb)) { try HcClient.writeArgs(verb, address: "t1", "x") }
+    }
+}
+
+@Test func parseStatusKind() {
+    #expect(HcClient.parseStatusKind(Data(#"{"status":{"app":"claude-code","kind":"question","state":"blocked"}}"#.utf8)) == "question")
+    #expect(HcClient.parseStatusKind(Data(#"{"status":"working"}"#.utf8)) == nil)
+}
+
 @Test func slowCommandTimesOut() {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/bin/sleep")

@@ -11,7 +11,10 @@ final class PanelWindow: NSPanel {
 final class AppController: NSObject, NSApplicationDelegate {
     private let args: Args
     private let store: Store
-    private let panel = PanelView(frame: CGRect(x: 2, y: 2, width: 480, height: 300))
+    private static let size = PanelView.size
+    /// 패널 모서리(pt).
+    static let radius: CGFloat = 5
+    private let panel = PanelView(frame: CGRect(x: 2, y: 2, width: size.width, height: size.height))
     private var window: PanelWindow!
     private var item: NSStatusItem!
     private var frameTimer: Timer?
@@ -32,16 +35,16 @@ final class AppController: NSObject, NSApplicationDelegate {
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         item.button?.setAccessibilityLabel("mmCode 모니터")
 
-        window = PanelWindow(contentRect: CGRect(x: 0, y: 0, width: 484, height: 304), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        window = PanelWindow(contentRect: CGRect(x: 0, y: 0, width: Self.size.width + 4, height: Self.size.height + 4), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         window.isOpaque = false; window.backgroundColor = .clear; window.hasShadow = true
         window.level = .popUpMenu; window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.autorecalculatesKeyViewLoop = true
         // 패널 테두리 2px는 패널 바깥에 둔다(시안의 box-shadow 0 0 0 2px).
-        let frame = NSView(frame: CGRect(x: 0, y: 0, width: 484, height: 304))
+        let frame = NSView(frame: CGRect(x: 0, y: 0, width: Self.size.width + 4, height: Self.size.height + 4))
         frame.wantsLayer = true
-        frame.layer?.cornerRadius = 12; frame.layer?.masksToBounds = true
-        panel.wantsLayer = true; panel.layer?.cornerRadius = 10; panel.layer?.masksToBounds = true
+        frame.layer?.cornerRadius = 2 + Self.radius; frame.layer?.masksToBounds = true
+        panel.wantsLayer = true; panel.layer?.cornerRadius = Self.radius; panel.layer?.masksToBounds = true
         frame.addSubview(panel)
         window.contentView = frame
         window.initialFirstResponder = panel
@@ -109,7 +112,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if let b = item.button, let bw = b.window {
             let r = bw.convertToScreen(b.convert(b.bounds, to: nil))
             let vis = (bw.screen ?? NSScreen.main)?.visibleFrame ?? .zero
-            let x = max(vis.minX + 4, min(r.midX - 242, vis.maxX - 488))
+            let x = max(vis.minX + 4, min(r.midX - (Self.size.width + 4) / 2, vis.maxX - Self.size.width - 8))
             window.setFrameTopLeftPoint(CGPoint(x: x, y: r.minY - 4))
         }
         edgeColor()

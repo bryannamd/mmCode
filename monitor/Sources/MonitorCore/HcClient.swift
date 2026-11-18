@@ -1,7 +1,8 @@
 import Foundation
 
-/// `hc`(herdr-core CLI)를 읽기 전용으로 부른다.
-/// `hc ls`에는 사용자의 다른 터미널이 모두 보인다. 그래서 쓰는 명령은 아래 네 개뿐이고, 쓰기 명령은 코드에 두지 않는다.
+/// `hc`(herdr-core CLI)를 부른다. 읽기는 `ls`·`get`·`events`·`read` 네 개다.
+/// `hc ls`에는 사용자의 다른 터미널이 모두 보인다. 그래서 쓰기는 `send`(메시지)와 `keys`(숫자 1~9 하나, 객관식 답) 두 개만 `write`로 허용한다.
+/// 쓰기는 사용자가 버튼을 누를 때만 부른다. `kill`·`rm`·`run`·`interrupt`·`server`와 `send --force`는 코드에 두지 않는다.
 public enum HcClient {
     public enum HcError: Error, Equatable {
         case notFound
@@ -11,6 +12,7 @@ public enum HcClient {
     }
 
     private static let readOnly: Set<String> = ["ls", "get", "events", "read"]
+    private static let writes: Set<String> = ["send", "keys"]
 
     // MARK: 찾기
 
@@ -45,6 +47,12 @@ public enum HcClient {
         return title
     }
 
+    /// `hc get <주소>` JSON → `status.kind`(예: `question`, `permission`). 없으면 nil.
+    public static func parseStatusKind(_ data: Data) -> String? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return (root["status"] as? [String: Any])?["kind"] as? String
+    }
+
     /// `hc events` 한 줄이 상태 변화인가. 하트비트(`"method":"heartbeat"`)는 아니다.
     public static func isChange(line: String) -> Bool { !line.contains("\"method\":\"heartbeat\"") }
 
@@ -52,9 +60,10 @@ public enum HcClient {
 
     public static func list() throws -> [Terminal] { parseLs(try run(["ls"])) }
 
-    public static func statusText(of address: String) -> String? {
-        guard !address.hasPrefix("-"), let data = try? run(["get", address]) else { return nil }
-        return parseStatusText(data)
+    /// `hc get` 한 번으로 상태 문구와 status.kind를 읽는다.
+    public static func status(of address: String) -> (text: String?, kind: String?) {
+        guard !address.hasPrefix("-"), let data = try? run(["get", address]) else { return (nil, nil) }
+        return (parseStatusText(data), parseStatusKind(data))
     }
 
     /// 화면과 기록을 글자로 읽는다.
@@ -63,8 +72,55 @@ public enum HcClient {
         return String(decoding: try run(["read", "--lines", String(lines), address]), as: UTF8.self)
     }
 
+    // MARK: 쓰기
+
+    /// 쓰기 인자 배열. 사용자 글은 셸을 거치지 않고 한 칸으로 들어간다. `--` 뒤에 두어 `-`로 시작하는 글도 옵션이 되지 않는다.
+    /// 주소가 `-`로 시작하거나 비면, `keys`가 숫자 1~9 하나가 아니면 거부한다.
+    public static func writeArgs(_ verb: String, address: String, _ payload: String) throws -> [String] {
+        guard writes.contains(verb) else { throw HcError.forbidden(verb) }
+        guard !address.isEmpty, !address.hasPrefix("-") else { throw HcError.forbidden(address) }
+        if verb == "keys" {
+            guard payload.count == 1, let d = payload.first, ("1"..."9").contains(d) else { throw HcError.forbidden(payload) }
+            return [verb, address, payload]
+        }
+        return [verb, address, "--", payload]
+    }
+
+    /// 쓰기 명령을 실행한다. 성공이면 nil, 실패면 이유. 메인 스레드에서 부르지 않는다.
+    /// `HC_TERMINAL_ID`를 뺀 환경으로 띄운다. 그래야 받는 세션이 감싸지 않은 사용자 입력으로 받는다.
+    public static func write(_ verb: String, address: String, _ payload: String, timeout: TimeInterval) -> String? {
+        let p: Process
+        do { p = try process(writeArgs(verb, address: address, payload)) }
+        catch HcError.notFound { return "hc를 찾지 못했습니다" }
+        catch { return "허용하지 않는 명령입니다" }
+        p.environment = PhaseClient.environment()
+        p.standardError = Pipe()
+        do {
+            let r = try exec(process: p, timeout: timeout)
+            return r.status == 0 ? nil : failReason(out: r.out, err: r.err, status: r.status)
+        } catch HcError.timedOut {
+            return "응답이 없습니다"
+        } catch {
+            return "실행하지 못했습니다"
+        }
+    }
+
+    /// hc의 오류 JSON(`{"error":{"message":…}}`)의 message, 없으면 stderr 첫 줄.
+    static func failReason(out: Data, err: Data, status: Int32) -> String {
+        for d in [out, err] {
+            if let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any], let m = (o["error"] as? [String: Any])?["message"] as? String { return m }
+        }
+        let first = String(decoding: err, as: UTF8.self).split(whereSeparator: \.isNewline).first.map(String.init)
+        return first ?? "종료 코드 \(status)"
+    }
+
     static func makeProcess(_ args: [String]) throws -> Process {
         guard let verb = args.first, readOnly.contains(verb) else { throw HcError.forbidden(args.first ?? "") }
+        return try process(args)
+    }
+
+    /// 검사는 부르는 쪽(`makeProcess`, `writeArgs`)이 한다.
+    private static func process(_ args: [String]) throws -> Process {
         guard let path = locate() else { throw HcError.notFound }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)

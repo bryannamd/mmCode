@@ -206,6 +206,8 @@ public enum GroundAction: Equatable, Sendable {
     /// 답을 직접 적는다.
     case reply(decision: String)
     case message(terminal: String)
+    /// 객관식 질문의 선택지 번호를 `hc keys`로 누른다.
+    case choose(terminal: String, number: Int)
     case stopAfter, interrupt, resume
     case enterFloor(Int)
 }
